@@ -57,6 +57,10 @@ async def ensure_indexes() -> None:
     await db.tickets.create_index("customer_id")
     await db.tickets.create_index("crm_tenant_key")
     await db.tickets.create_index("solar_user_id")
+    await db.tickets.create_index("assignee_id")
+    await db.tickets.create_index("category")
+    await db.tickets.create_index("sla_due_at")
+    await db.tickets.create_index([("status", 1), ("assignee_id", 1)])
     await db.tickets.create_index(
         "number",
         unique=True,
@@ -64,6 +68,12 @@ async def ensure_indexes() -> None:
         name="ticket_number_unique_partial",
     )
     await db.ticket_messages.create_index([("ticket_id", 1), ("created_at", 1)])
+    await db.ticket_messages.create_index(
+        [("ticket_id", 1), ("visibility", 1), ("created_at", 1)],
+        name="ticket_msg_visibility",
+    )
+    await db.notifications.create_index([("user_id", 1), ("read", 1), ("ts", -1)])
+    await db.notifications.create_index("ticket_id")
     await db.org_roles.create_index("key", unique=True)
     await db.menus.create_index("key", unique=True)
     await db.role_menus.create_index(
@@ -81,6 +91,10 @@ async def ensure_indexes() -> None:
     await db.tasks.create_index("assignee_id")
     await db.tasks.create_index("project_id")
     await db.tasks.create_index("due_date")
+    await db.tasks.create_index("task_type")
+    await db.tasks.create_index("observer_ids")
+    await db.tasks.create_index([("status", 1), ("due_date", 1)])
+    await db.tasks.create_index("reminder_at")
     await db.tasks.create_index(
         "number",
         unique=True,

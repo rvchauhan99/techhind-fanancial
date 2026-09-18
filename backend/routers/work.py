@@ -1,11 +1,13 @@
 """Projects, tasks, work activity, workload dashboard & report."""
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
+import storage
 from core import (
     ALL_ROLES,
     audit,
@@ -18,22 +20,36 @@ from core import (
     require_roles,
     today,
     user_capabilities,
+    validate_upload,
 )
-from rbac_seed import WORK_CATEGORIES
+from rbac_seed import TASK_TYPES
 
 router = APIRouter(prefix="/api/work", tags=["work"])
 
 PROJECT_STATUSES = ("planned", "active", "on_hold", "completed", "cancelled")
-TASK_STATUSES = ("todo", "in_progress", "blocked", "done", "cancelled")
+TASK_STATUSES = (
+    "backlog",
+    "todo",
+    "in_progress",
+    "in_review",
+    "blocked",
+    "done",
+    "cancelled",
+)
+KANBAN_COLUMNS = ("backlog", "todo", "in_progress", "in_review", "blocked", "done")
 PRIORITIES = ("low", "normal", "high", "urgent")
+OPEN_STATUSES = ("backlog", "todo", "in_progress", "in_review", "blocked")
 PROJECT_FIELDS = [
     "name", "description", "status", "priority", "customer_id", "owner_id",
     "member_ids", "start_date", "due_date", "tags",
 ]
 TASK_FIELDS = [
-    "title", "description", "status", "priority", "category", "project_id",
-    "assignee_id", "due_date", "start_date", "tags",
+    "title", "description", "status", "priority", "category", "task_type",
+    "project_id", "assignee_id", "observer_ids", "due_date", "start_date",
+    "tags", "reminder_at", "checklist", "attachment_ids",
 ]
+LEGACY_TYPE_MAP = {"demo": "customer_demo"}
+MAX_TASK_ATTACHMENTS = 10
 
 
 def _strip(doc: dict | None) -> dict | None:
@@ -42,6 +58,21 @@ def _strip(doc: dict | None) -> dict | None:
     doc = dict(doc)
     doc.pop("_id", None)
     return doc
+
+
+def _normalize_task_type(val: str | None) -> str:
+    v = (val or "other").strip().lower()
+    v = LEGACY_TYPE_MAP.get(v, v)
+    if v not in TASK_TYPES:
+        return "other"
+    return v
+
+
+def _normalize_status(val: str | None) -> str:
+    v = (val or "todo").strip().lower()
+    if v not in TASK_STATUSES:
+        return "todo"
+    return v
 
 
 async def _work_activity(
@@ -76,10 +107,26 @@ async def _user_map(ids: list) -> dict:
     if not ids:
         return {}
     rows = await db.users.find(
-        {"id": {"$in": ids}},
+        {"id": {"$in": list(set(ids))}},
         {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1},
     ).to_list(500)
     return {r["id"]: r for r in rows}
+
+
+def _migrate_task_doc(t: dict) -> dict:
+    """Normalize legacy fields on read."""
+    if not t.get("task_type"):
+        t["task_type"] = _normalize_task_type(t.get("category"))
+    else:
+        t["task_type"] = _normalize_task_type(t.get("task_type"))
+    t["category"] = t["task_type"]  # alias for older UI
+    t["status"] = _normalize_status(t.get("status"))
+    t.setdefault("observer_ids", [])
+    t.setdefault("checklist", [])
+    t.setdefault("attachment_ids", [])
+    t.setdefault("tags", [])
+    t.setdefault("reminder_sent", False)
+    return t
 
 
 async def _enrich_project(p: dict) -> dict:
@@ -96,18 +143,45 @@ async def _enrich_project(p: dict) -> dict:
     return p
 
 
+async def _file_map(ids: list) -> list:
+    ids = [i for i in ids if i]
+    if not ids:
+        return []
+    rows = await db.files.find(
+        {"id": {"$in": ids}, "is_deleted": {"$ne": True}},
+        {"_id": 0},
+    ).to_list(100)
+    by_id = {r["id"]: r for r in rows}
+    return [by_id[i] for i in ids if i in by_id]
+
+
 async def _enrich_task(t: dict) -> dict:
-    t = _strip(t) or {}
-    umap = await _user_map([t.get("assignee_id"), t.get("created_by")])
+    t = _migrate_task_doc(_strip(t) or {})
+    umap = await _user_map(
+        [t.get("assignee_id"), t.get("created_by"), *(t.get("observer_ids") or [])]
+    )
     t["assignee"] = umap.get(t.get("assignee_id"))
     t["creator"] = umap.get(t.get("created_by"))
+    t["observers"] = [umap[i] for i in (t.get("observer_ids") or []) if i in umap]
     if t.get("project_id"):
         pr = await db.projects.find_one(
             {"id": t["project_id"]},
             {"_id": 0, "id": 1, "number": 1, "name": 1, "status": 1},
         )
         t["project"] = pr
+    t["attachments"] = await _file_map(t.get("attachment_ids") or [])
     return t
+
+
+async def _valid_user_ids(ids: list) -> list:
+    clean = list(dict.fromkeys([i for i in (ids or []) if i]))
+    if not clean:
+        return []
+    found = await db.users.find(
+        {"id": {"$in": clean}, "active": {"$ne": False}},
+        {"_id": 0, "id": 1},
+    ).to_list(len(clean))
+    return [r["id"] for r in found]
 
 
 class ProjectIn(BaseModel):
@@ -141,12 +215,16 @@ class TaskIn(BaseModel):
     description: str = ""
     status: str = "todo"
     priority: str = "normal"
-    category: str = "other"
+    category: Optional[str] = None
+    task_type: Optional[str] = None
     project_id: Optional[str] = None
     assignee_id: Optional[str] = None
+    observer_ids: List[str] = []
     due_date: Optional[str] = None
     start_date: Optional[str] = None
+    reminder_at: Optional[str] = None
     tags: List[str] = []
+    quick_testing: bool = False
 
 
 class TaskPatch(BaseModel):
@@ -155,15 +233,37 @@ class TaskPatch(BaseModel):
     status: Optional[str] = None
     priority: Optional[str] = None
     category: Optional[str] = None
+    task_type: Optional[str] = None
     project_id: Optional[str] = None
     assignee_id: Optional[str] = None
+    observer_ids: Optional[List[str]] = None
     due_date: Optional[str] = None
     start_date: Optional[str] = None
+    reminder_at: Optional[str] = None
     tags: Optional[List[str]] = None
 
 
 class CommentIn(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
+
+
+class ObserversIn(BaseModel):
+    observer_ids: List[str] = []
+
+
+class ChecklistItemIn(BaseModel):
+    id: Optional[str] = None
+    text: str = Field(min_length=1, max_length=500)
+    done: bool = False
+    sort_order: int = 0
+
+
+class ChecklistIn(BaseModel):
+    items: List[ChecklistItemIn] = []
+
+
+class ReminderIn(BaseModel):
+    reminder_at: Optional[str] = None  # null clears
 
 
 def _validate_status(val: str, allowed: tuple, label: str):
@@ -176,17 +276,71 @@ def _validate_priority(val: str):
         raise HTTPException(status_code=400, detail=f"Invalid priority: {val}")
 
 
-def _validate_category(val: str):
-    if val not in WORK_CATEGORIES:
-        raise HTTPException(status_code=400, detail=f"Invalid category: {val}")
+def _validate_task_type(val: str):
+    if val not in TASK_TYPES:
+        raise HTTPException(status_code=400, detail=f"Invalid task_type: {val}")
+
+
+def _due_bucket_filter(bucket: str, today_s: str) -> dict:
+    d0 = date.fromisoformat(today_s)
+    if bucket == "overdue":
+        return {"due_date": {"$lt": today_s}, "status": {"$in": list(OPEN_STATUSES)}}
+    if bucket == "today":
+        return {"due_date": today_s, "status": {"$in": list(OPEN_STATUSES)}}
+    if bucket == "tomorrow":
+        return {
+            "due_date": (d0 + timedelta(days=1)).isoformat(),
+            "status": {"$in": list(OPEN_STATUSES)},
+        }
+    if bucket == "week":
+        end = (d0 + timedelta(days=7)).isoformat()
+        return {
+            "due_date": {"$gte": today_s, "$lte": end},
+            "status": {"$in": list(OPEN_STATUSES)},
+        }
+    if bucket == "none":
+        return {
+            "$or": [{"due_date": None}, {"due_date": ""}, {"due_date": {"$exists": False}}],
+            "status": {"$in": list(OPEN_STATUSES)},
+        }
+    raise HTTPException(status_code=400, detail=f"Invalid due_bucket: {bucket}")
+
+
+def _classify_due(due: str | None, today_s: str) -> str:
+    if not due:
+        return "none"
+    d0 = date.fromisoformat(today_s)
+    try:
+        dd = date.fromisoformat(due[:10])
+    except ValueError:
+        return "none"
+    if dd < d0:
+        return "overdue"
+    if dd == d0:
+        return "today"
+    if dd == d0 + timedelta(days=1):
+        return "tomorrow"
+    if dd <= d0 + timedelta(days=7):
+        return "week"
+    return "later"
 
 
 # ---------- Meta ----------
 @router.get("/categories")
 async def list_categories(user=Depends(require_roles(*ALL_ROLES))):
-    masters = await db.masters.find_one({"id": "masters"}, {"_id": 0, "work_task_categories": 1})
-    cats = (masters or {}).get("work_task_categories") or [{"name": c} for c in WORK_CATEGORIES]
-    return cats
+    masters = await db.masters.find_one({"id": "masters"}, {"_id": 0, "work_task_categories": 1, "work_task_types": 1})
+    cats = (masters or {}).get("work_task_types") or (masters or {}).get("work_task_categories")
+    return cats or [{"name": c} for c in TASK_TYPES]
+
+
+@router.get("/task-types")
+async def list_task_types(user=Depends(require_roles(*ALL_ROLES))):
+    return [{"name": t} for t in TASK_TYPES]
+
+
+@router.get("/task-statuses")
+async def list_task_statuses(user=Depends(require_roles(*ALL_ROLES))):
+    return [{"name": s} for s in TASK_STATUSES]
 
 
 # ---------- Projects ----------
@@ -209,10 +363,7 @@ async def list_projects(
             {"number": {"$regex": q.strip(), "$options": "i"}},
         ]
     rows = await db.projects.find(filt, {"_id": 0}).sort("updated_at", -1).to_list(limit)
-    out = []
-    for r in rows:
-        out.append(await _enrich_project(r))
-    return out
+    return [await _enrich_project(r) for r in rows]
 
 
 @router.post("/projects")
@@ -275,7 +426,6 @@ async def patch_project(
         _validate_priority(patch["priority"])
     if "owner_id" in patch and patch["owner_id"]:
         if not caps.get("can_work_manage") and patch["owner_id"] != existing.get("owner_id"):
-            # allow self-owned edits; reassignment needs manage
             if existing.get("owner_id") != user["id"]:
                 raise HTTPException(status_code=403, detail="can_work_manage required to reassign owner")
         if not await db.users.find_one({"id": patch["owner_id"], "active": {"$ne": False}}):
@@ -287,63 +437,169 @@ async def patch_project(
     after = {**existing, **patch}
     diff = field_diff(existing, after, PROJECT_FIELDS)
     await _work_activity(
-        user,
-        "project",
-        project_id,
-        "project_updated",
-        f"Updated {existing.get('number')}",
-        diff=diff,
+        user, "project", project_id, "project_updated",
+        f"Updated {existing.get('number')}", diff=diff,
     )
     return await _enrich_project(await db.projects.find_one({"id": project_id}, {"_id": 0}))
 
 
-# ---------- Tasks ----------
+# ---------- Task helpers ----------
+def _build_task_filter(
+    *,
+    status: Optional[str],
+    project_id: Optional[str],
+    assignee_id: Optional[str],
+    category: Optional[str],
+    task_type: Optional[str],
+    mine: bool,
+    overdue: bool,
+    observer_id: Optional[str],
+    due_bucket: Optional[str],
+    q: Optional[str],
+    user: dict,
+) -> dict:
+    filt: dict = {}
+    if status:
+        filt["status"] = status
+    if project_id:
+        filt["project_id"] = project_id
+    tt = task_type or category
+    if tt:
+        filt["task_type"] = _normalize_task_type(tt)
+    if mine:
+        filt["assignee_id"] = user["id"]
+    elif assignee_id:
+        filt["assignee_id"] = assignee_id
+    if observer_id:
+        filt["observer_ids"] = observer_id
+    today_s = today().isoformat()
+    if due_bucket:
+        filt.update(_due_bucket_filter(due_bucket, today_s))
+    elif overdue:
+        filt["due_date"] = {"$lt": today_s}
+        filt["status"] = {"$in": list(OPEN_STATUSES)}
+    if q and q.strip():
+        filt["$or"] = [
+            {"title": {"$regex": q.strip(), "$options": "i"}},
+            {"number": {"$regex": q.strip(), "$options": "i"}},
+        ]
+    return filt
+
+
+# ---------- Tasks: board / deadline / reminders (before {id}) ----------
+@router.get("/tasks/board")
+async def tasks_board(
+    project_id: Optional[str] = None,
+    assignee_id: Optional[str] = None,
+    mine: bool = False,
+    task_type: Optional[str] = None,
+    q: Optional[str] = None,
+    user=Depends(require_roles(*ALL_ROLES)),
+):
+    filt = _build_task_filter(
+        status=None, project_id=project_id, assignee_id=assignee_id,
+        category=None, task_type=task_type, mine=mine, overdue=False,
+        observer_id=None, due_bucket=None, q=q, user=user,
+    )
+    filt["status"] = {"$in": list(KANBAN_COLUMNS)}
+    rows = await db.tasks.find(filt, {"_id": 0}).sort("updated_at", -1).to_list(500)
+    enriched = [await _enrich_task(r) for r in rows]
+    columns = []
+    for st in KANBAN_COLUMNS:
+        columns.append({
+            "status": st,
+            "tasks": [t for t in enriched if t.get("status") == st],
+        })
+    return {"columns": columns}
+
+
+@router.get("/tasks/deadline")
+async def tasks_deadline(
+    project_id: Optional[str] = None,
+    assignee_id: Optional[str] = None,
+    mine: bool = False,
+    task_type: Optional[str] = None,
+    q: Optional[str] = None,
+    user=Depends(require_roles(*ALL_ROLES)),
+):
+    filt = _build_task_filter(
+        status=None, project_id=project_id, assignee_id=assignee_id,
+        category=None, task_type=task_type, mine=mine, overdue=False,
+        observer_id=None, due_bucket=None, q=q, user=user,
+    )
+    filt["status"] = {"$in": list(OPEN_STATUSES)}
+    rows = await db.tasks.find(filt, {"_id": 0}).sort("due_date", 1).to_list(500)
+    today_s = today().isoformat()
+    buckets = {k: [] for k in ("overdue", "today", "tomorrow", "week", "none", "later")}
+    for r in rows:
+        t = await _enrich_task(r)
+        buckets[_classify_due(t.get("due_date"), today_s)].append(t)
+    return {
+        "buckets": [
+            {"key": k, "tasks": buckets[k]}
+            for k in ("overdue", "today", "tomorrow", "week", "later", "none")
+        ]
+    }
+
+
+@router.get("/tasks/reminders/due")
+async def reminders_due(user=Depends(require_roles(*ALL_ROLES))):
+    now = iso_now()
+    rows = await db.tasks.find(
+        {
+            "reminder_at": {"$lte": now, "$type": "string"},
+            "reminder_sent": {"$ne": True},
+            "status": {"$in": list(OPEN_STATUSES)},
+        },
+        {"_id": 0},
+    ).sort("reminder_at", 1).to_list(100)
+    return [await _enrich_task(r) for r in rows]
+
+
 @router.get("/tasks")
 async def list_tasks(
     status: Optional[str] = None,
     project_id: Optional[str] = None,
     assignee_id: Optional[str] = None,
     category: Optional[str] = None,
+    task_type: Optional[str] = None,
     mine: bool = False,
     overdue: bool = False,
+    observer_id: Optional[str] = None,
+    due_bucket: Optional[str] = None,
     q: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     user=Depends(require_roles(*ALL_ROLES)),
 ):
-    filt: dict = {}
-    if status:
-        filt["status"] = status
-    if project_id:
-        filt["project_id"] = project_id
-    if category:
-        filt["category"] = category
-    if mine:
-        filt["assignee_id"] = user["id"]
-    elif assignee_id:
-        filt["assignee_id"] = assignee_id
-    if overdue:
-        filt["due_date"] = {"$lt": today().isoformat()}
-        filt["status"] = {"$nin": ["done", "cancelled"]}
-    if q and q.strip():
-        filt["$or"] = [
-            {"title": {"$regex": q.strip(), "$options": "i"}},
-            {"number": {"$regex": q.strip(), "$options": "i"}},
-        ]
+    filt = _build_task_filter(
+        status=status, project_id=project_id, assignee_id=assignee_id,
+        category=category, task_type=task_type, mine=mine, overdue=overdue,
+        observer_id=observer_id, due_bucket=due_bucket, q=q, user=user,
+    )
     rows = await db.tasks.find(filt, {"_id": 0}).sort("updated_at", -1).to_list(limit)
     return [await _enrich_task(r) for r in rows]
 
 
 @router.post("/tasks")
 async def create_task(body: TaskIn, user=Depends(require_capability("can_work_write"))):
-    _validate_status(body.status, TASK_STATUSES, "status")
-    _validate_priority(body.priority)
-    _validate_category(body.category)
+    status = body.status
+    priority = body.priority
+    task_type = _normalize_task_type(body.task_type or body.category)
+    assignee_id = body.assignee_id
+    if body.quick_testing:
+        task_type = "testing"
+        priority = "high"
+        status = status if status in TASK_STATUSES else "todo"
+        if not assignee_id:
+            assignee_id = user["id"]
+    _validate_status(status, TASK_STATUSES, "status")
+    _validate_priority(priority)
+    _validate_task_type(task_type)
     if body.project_id and not await db.projects.find_one({"id": body.project_id}):
         raise HTTPException(status_code=404, detail="Project not found")
-    if body.assignee_id and not await db.users.find_one(
-        {"id": body.assignee_id, "active": {"$ne": False}}
-    ):
+    if assignee_id and not await db.users.find_one({"id": assignee_id, "active": {"$ne": False}}):
         raise HTTPException(status_code=400, detail="Invalid assignee")
+    observers = await _valid_user_ids(body.observer_ids)
     now = iso_now()
     number = await next_number("TSK", today())
     doc = {
@@ -351,28 +607,46 @@ async def create_task(body: TaskIn, user=Depends(require_capability("can_work_wr
         "number": number,
         "title": body.title.strip(),
         "description": body.description or "",
-        "status": body.status,
-        "priority": body.priority,
-        "category": body.category,
+        "status": status,
+        "priority": priority,
+        "task_type": task_type,
+        "category": task_type,
         "project_id": body.project_id,
-        "assignee_id": body.assignee_id,
+        "assignee_id": assignee_id,
+        "observer_ids": observers,
         "due_date": body.due_date,
         "start_date": body.start_date,
+        "reminder_at": body.reminder_at,
+        "reminder_sent": False,
+        "checklist": [],
+        "attachment_ids": [],
         "tags": body.tags or [],
+        "started_at": None,
+        "completed_at": None,
         "created_by": user["id"],
         "created_at": now,
         "updated_at": now,
     }
+    if status == "in_progress":
+        doc["started_at"] = now
     await db.tasks.insert_one(doc)
     await _work_activity(user, "task", doc["id"], "task_created", f"Created {number}")
-    if body.assignee_id:
+    if assignee_id:
         await _work_activity(
-            user,
-            "task",
-            doc["id"],
-            "task_assigned",
-            f"Assigned {number}",
-            diff={"assignee_id": {"old": None, "new": body.assignee_id}},
+            user, "task", doc["id"], "task_assigned", f"Assigned {number}",
+            diff={"assignee_id": {"old": None, "new": assignee_id}},
+        )
+    if observers:
+        await _work_activity(
+            user, "task", doc["id"], "observer_added",
+            f"Observers set ({len(observers)})",
+            diff={"observer_ids": {"old": [], "new": observers}},
+        )
+    if body.reminder_at:
+        await _work_activity(
+            user, "task", doc["id"], "reminder_set",
+            f"Reminder {body.reminder_at}",
+            diff={"reminder_at": {"old": None, "new": body.reminder_at}},
         )
     return await _enrich_task(doc)
 
@@ -394,19 +668,34 @@ async def patch_task(
     existing = await db.tasks.find_one({"id": task_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Task not found")
+    existing = _migrate_task_doc(existing)
     caps = await user_capabilities(user)
-    patch = {k: v for k, v in body.model_dump(exclude_none=True).items()}
-    if "status" in patch:
+    patch = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
+    # allow clearing reminder_at with null
+    raw = body.model_dump(exclude_unset=True)
+    if "reminder_at" in raw and raw["reminder_at"] is None:
+        patch["reminder_at"] = None
+        patch["reminder_sent"] = False
+
+    if "task_type" in patch or "category" in patch:
+        tt = _normalize_task_type(patch.get("task_type") or patch.get("category"))
+        _validate_task_type(tt)
+        patch["task_type"] = tt
+        patch["category"] = tt
+    if "status" in patch and patch["status"] is not None:
         _validate_status(patch["status"], TASK_STATUSES, "status")
-    if "priority" in patch:
+        if patch["status"] == "in_progress" and not existing.get("started_at"):
+            patch["started_at"] = iso_now()
+        if patch["status"] == "done" and not existing.get("completed_at"):
+            patch["completed_at"] = iso_now()
+    if "priority" in patch and patch["priority"] is not None:
         _validate_priority(patch["priority"])
-    if "category" in patch:
-        _validate_category(patch["category"])
+    if "observer_ids" in patch and patch["observer_ids"] is not None:
+        patch["observer_ids"] = await _valid_user_ids(patch["observer_ids"])
     if "assignee_id" in patch:
         new_a = patch["assignee_id"]
         old_a = existing.get("assignee_id")
         if new_a != old_a and not caps.get("can_work_manage"):
-            # writers can assign if currently unassigned or self is assignee/creator
             allowed = (
                 not old_a
                 or old_a == user["id"]
@@ -422,13 +711,195 @@ async def patch_task(
     await db.tasks.update_one({"id": task_id}, {"$set": patch})
     after = {**existing, **patch}
     diff = field_diff(existing, after, TASK_FIELDS)
+    action = "task_updated"
+    if "status" in diff:
+        action = "status_changed"
+    elif "assignee_id" in diff:
+        action = "assignee_changed"
     await _work_activity(
-        user,
-        "task",
-        task_id,
-        "task_updated",
-        f"Updated {existing.get('number')}",
-        diff=diff,
+        user, "task", task_id, action,
+        f"Updated {existing.get('number')}", diff=diff,
+    )
+    return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
+
+
+@router.post("/tasks/{task_id}/start")
+async def start_task(task_id: str, user=Depends(require_capability("can_work_write"))):
+    existing = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Task not found")
+    now = iso_now()
+    patch = {
+        "status": "in_progress",
+        "started_at": existing.get("started_at") or now,
+        "updated_at": now,
+    }
+    await db.tasks.update_one({"id": task_id}, {"$set": patch})
+    await _work_activity(
+        user, "task", task_id, "task_started", f"Started {existing.get('number')}",
+        diff={"status": {"old": existing.get("status"), "new": "in_progress"}},
+    )
+    return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
+
+
+@router.post("/tasks/{task_id}/complete")
+async def complete_task(task_id: str, user=Depends(require_capability("can_work_write"))):
+    existing = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Task not found")
+    now = iso_now()
+    patch = {
+        "status": "done",
+        "completed_at": now,
+        "updated_at": now,
+    }
+    if not existing.get("started_at"):
+        patch["started_at"] = now
+    await db.tasks.update_one({"id": task_id}, {"$set": patch})
+    await _work_activity(
+        user, "task", task_id, "task_completed", f"Completed {existing.get('number')}",
+        diff={"status": {"old": existing.get("status"), "new": "done"}},
+    )
+    return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
+
+
+@router.put("/tasks/{task_id}/observers")
+async def put_observers(
+    task_id: str,
+    body: ObserversIn,
+    user=Depends(require_capability("can_work_write")),
+):
+    existing = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Task not found")
+    old = existing.get("observer_ids") or []
+    new = await _valid_user_ids(body.observer_ids)
+    await db.tasks.update_one(
+        {"id": task_id},
+        {"$set": {"observer_ids": new, "updated_at": iso_now()}},
+    )
+    await _work_activity(
+        user, "task", task_id, "observer_added" if len(new) >= len(old) else "observer_removed",
+        f"Observers updated ({len(new)})",
+        diff={"observer_ids": {"old": old, "new": new}},
+    )
+    return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
+
+
+@router.put("/tasks/{task_id}/checklist")
+async def put_checklist(
+    task_id: str,
+    body: ChecklistIn,
+    user=Depends(require_capability("can_work_write")),
+):
+    existing = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Task not found")
+    items = []
+    for i, it in enumerate(body.items):
+        items.append({
+            "id": it.id or new_id(),
+            "text": it.text.strip(),
+            "done": bool(it.done),
+            "sort_order": it.sort_order if it.sort_order else i,
+        })
+    await db.tasks.update_one(
+        {"id": task_id},
+        {"$set": {"checklist": items, "updated_at": iso_now()}},
+    )
+    await _work_activity(
+        user, "task", task_id, "checklist_updated",
+        f"Checklist ({len(items)} items)",
+        diff={"checklist_count": {"old": len(existing.get("checklist") or []), "new": len(items)}},
+    )
+    return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
+
+
+@router.post("/tasks/{task_id}/attachments")
+async def upload_task_attachment(
+    task_id: str,
+    file: UploadFile = File(...),
+    user=Depends(require_capability("can_work_write")),
+):
+    existing = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Task not found")
+    ids = list(existing.get("attachment_ids") or [])
+    if len(ids) >= MAX_TASK_ATTACHMENTS:
+        raise HTTPException(status_code=400, detail=f"Max {MAX_TASK_ATTACHMENTS} attachments")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+    ctype = validate_upload(data, file.content_type, file.filename or "")
+    fid = new_id()
+    ext = (file.filename or "bin").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "bin"
+    path = f"{storage.APP_NAME}/tasks/{task_id}/{fid}.{ext}"
+    storage.put_object(path, data, ctype)
+    await db.files.insert_one({
+        "id": fid,
+        "storage_path": path,
+        "original_filename": file.filename,
+        "content_type": ctype,
+        "size": len(data),
+        "is_deleted": False,
+        "created_at": iso_now(),
+    })
+    ids.append(fid)
+    await db.tasks.update_one(
+        {"id": task_id},
+        {"$set": {"attachment_ids": ids, "updated_at": iso_now()}},
+    )
+    await _work_activity(
+        user, "task", task_id, "attachment_added",
+        f"Attached {file.filename}",
+        diff={"attachment_id": {"old": None, "new": fid}},
+    )
+    return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
+
+
+@router.delete("/tasks/{task_id}/attachments/{file_id}")
+async def delete_task_attachment(
+    task_id: str,
+    file_id: str,
+    user=Depends(require_capability("can_work_write")),
+):
+    existing = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Task not found")
+    ids = [i for i in (existing.get("attachment_ids") or []) if i != file_id]
+    await db.tasks.update_one(
+        {"id": task_id},
+        {"$set": {"attachment_ids": ids, "updated_at": iso_now()}},
+    )
+    await db.files.update_one({"id": file_id}, {"$set": {"is_deleted": True}})
+    await _work_activity(
+        user, "task", task_id, "attachment_removed",
+        "Attachment removed",
+        diff={"attachment_id": {"old": file_id, "new": None}},
+    )
+    return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
+
+
+@router.post("/tasks/{task_id}/reminders")
+async def set_reminder(
+    task_id: str,
+    body: ReminderIn,
+    user=Depends(require_capability("can_work_write")),
+):
+    existing = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Task not found")
+    old = existing.get("reminder_at")
+    patch = {
+        "reminder_at": body.reminder_at,
+        "reminder_sent": False,
+        "updated_at": iso_now(),
+    }
+    await db.tasks.update_one({"id": task_id}, {"$set": patch})
+    await _work_activity(
+        user, "task", task_id, "reminder_set" if body.reminder_at else "reminder_cleared",
+        f"Reminder {body.reminder_at or 'cleared'}",
+        diff={"reminder_at": {"old": old, "new": body.reminder_at}},
     )
     return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
 
@@ -443,11 +914,7 @@ async def project_comment(
     if not await db.projects.find_one({"id": project_id}):
         raise HTTPException(status_code=404, detail="Project not found")
     return await _work_activity(
-        user,
-        "project",
-        project_id,
-        "comment",
-        "Comment added",
+        user, "project", project_id, "comment", "Comment added",
         comment=body.body.strip(),
     )
 
@@ -461,11 +928,7 @@ async def task_comment(
     if not await db.tasks.find_one({"id": task_id}):
         raise HTTPException(status_code=404, detail="Task not found")
     return await _work_activity(
-        user,
-        "task",
-        task_id,
-        "comment",
-        "Comment added",
+        user, "task", task_id, "comment", "Comment added",
         comment=body.body.strip(),
     )
 
@@ -490,18 +953,23 @@ async def list_activity(
 @router.get("/dashboard")
 async def work_dashboard(user=Depends(require_roles(*ALL_ROLES))):
     today_s = today().isoformat()
-    open_task_q = {"status": {"$nin": ["done", "cancelled"]}}
+    open_task_q = {"status": {"$in": list(OPEN_STATUSES)}}
     my_open = await db.tasks.count_documents({**open_task_q, "assignee_id": user["id"]})
     overdue = await db.tasks.count_documents(
         {**open_task_q, "due_date": {"$lt": today_s}, "assignee_id": user["id"]}
     )
     all_overdue = await db.tasks.count_documents({**open_task_q, "due_date": {"$lt": today_s}})
     active_projects = await db.projects.count_documents({"status": {"$in": ["planned", "active"]}})
+    now = iso_now()
+    reminders_due = await db.tasks.count_documents({
+        "reminder_at": {"$lte": now, "$type": "string"},
+        "reminder_sent": {"$ne": True},
+        "status": {"$in": list(OPEN_STATUSES)},
+    })
     by_status = {}
     for s in TASK_STATUSES:
         by_status[s] = await db.tasks.count_documents({"status": s})
 
-    # workload by assignee (open tasks)
     pipeline = [
         {"$match": open_task_q},
         {"$group": {"_id": "$assignee_id", "open": {"$sum": 1}}},
@@ -525,6 +993,7 @@ async def work_dashboard(user=Depends(require_roles(*ALL_ROLES))):
         "my_open": my_open,
         "my_overdue": overdue,
         "all_overdue": all_overdue,
+        "reminders_due": reminders_due,
         "active_projects": active_projects,
         "by_status": by_status,
         "workload": workload,
@@ -555,7 +1024,9 @@ async def work_report(
     by_assignee: dict = {}
     by_status: dict = {}
     for t in tasks:
-        by_category[t.get("category") or "other"] = by_category.get(t.get("category") or "other", 0) + 1
+        t = _migrate_task_doc(t)
+        key = t.get("task_type") or "other"
+        by_category[key] = by_category.get(key, 0) + 1
         aid = t.get("assignee_id") or "unassigned"
         by_assignee[aid] = by_assignee.get(aid, 0) + 1
         by_status[t.get("status") or "todo"] = by_status.get(t.get("status") or "todo", 0) + 1
@@ -574,7 +1045,7 @@ async def work_report(
         "totals": {
             "tasks": len(tasks),
             "projects": len(projects),
-            "open_tasks": sum(1 for t in tasks if t.get("status") not in ("done", "cancelled")),
+            "open_tasks": sum(1 for t in tasks if _normalize_status(t.get("status")) in OPEN_STATUSES),
             "done_tasks": sum(1 for t in tasks if t.get("status") == "done"),
         },
         "by_category": [{"category": k, "count": v} for k, v in sorted(by_category.items())],

@@ -29,18 +29,27 @@ _LEGACY_CAPS = {
     "admin": dict(
         can_finance_write=True, can_finance_admin=True, can_finance_audit=True,
         can_work_write=True, can_work_manage=True, can_rbac_admin=True,
+        can_ticket_write=True,
     ),
     "accountant": dict(
         can_finance_write=True, can_finance_admin=False, can_finance_audit=True,
         can_work_write=False, can_work_manage=False, can_rbac_admin=False,
+        can_ticket_write=True,
     ),
     "ops": dict(
         can_finance_write=True, can_finance_admin=False, can_finance_audit=False,
         can_work_write=True, can_work_manage=False, can_rbac_admin=False,
+        can_ticket_write=True,
     ),
     "viewer": dict(
         can_finance_write=False, can_finance_admin=False, can_finance_audit=False,
         can_work_write=False, can_work_manage=False, can_rbac_admin=False,
+        can_ticket_write=False,
+    ),
+    "support_agent": dict(
+        can_finance_write=False, can_finance_admin=False, can_finance_audit=False,
+        can_work_write=False, can_work_manage=False, can_rbac_admin=False,
+        can_ticket_write=True,
     ),
 }
 
@@ -279,6 +288,7 @@ async def user_capabilities(user: dict) -> dict:
             "can_work_write": bool(row.get("can_work_write")),
             "can_work_manage": bool(row.get("can_work_manage")),
             "can_rbac_admin": bool(row.get("can_rbac_admin")),
+            "can_ticket_write": bool(row.get("can_ticket_write")),
         }
     return dict(_LEGACY_CAPS.get(role_key, _LEGACY_CAPS["viewer"]))
 

@@ -59,7 +59,9 @@ export const STATUS_STYLES = {
   on_hold: "bg-amber-50 text-amber-700 border-amber-200",
   completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
   todo: "bg-slate-100 text-slate-600 border-slate-300",
+  backlog: "bg-slate-100 text-slate-500 border-slate-300",
   in_progress: "bg-blue-50 text-blue-700 border-blue-200",
+  in_review: "bg-violet-50 text-violet-700 border-violet-200",
   blocked: "bg-red-50 text-red-700 border-red-200",
   done: "bg-emerald-50 text-emerald-700 border-emerald-200",
 };
@@ -71,7 +73,8 @@ export const STATUS_LABELS = {
   overdue: "Overdue", paused: "Paused", expired: "Expired",
   open: "Open", pending: "Pending", resolved: "Resolved", closed: "Closed",
   planned: "Planned", on_hold: "On Hold", completed: "Completed",
-  todo: "To Do", in_progress: "In Progress", blocked: "Blocked", done: "Done",
+  backlog: "Backlog", todo: "To Do", in_progress: "In Progress",
+  in_review: "In Review", blocked: "Blocked", done: "Done",
 };
 
 export const DOC_TYPE_LABELS = { INV: "Tax Invoice", CN: "Credit Note", DN: "Debit Note" };

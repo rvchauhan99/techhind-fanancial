@@ -16,6 +16,7 @@ ROLE_DEFS = [
             can_work_write=True,
             can_work_manage=True,
             can_rbac_admin=True,
+            can_ticket_write=True,
         ),
     },
     {
@@ -29,6 +30,7 @@ ROLE_DEFS = [
             can_work_write=False,
             can_work_manage=False,
             can_rbac_admin=False,
+            can_ticket_write=True,
         ),
     },
     {
@@ -42,6 +44,7 @@ ROLE_DEFS = [
             can_work_write=True,
             can_work_manage=False,
             can_rbac_admin=False,
+            can_ticket_write=True,
         ),
     },
     {
@@ -55,6 +58,7 @@ ROLE_DEFS = [
             can_work_write=False,
             can_work_manage=False,
             can_rbac_admin=False,
+            can_ticket_write=False,
         ),
     },
     {
@@ -68,6 +72,7 @@ ROLE_DEFS = [
             can_work_write=True,
             can_work_manage=True,
             can_rbac_admin=False,
+            can_ticket_write=False,
         ),
     },
     {
@@ -81,6 +86,7 @@ ROLE_DEFS = [
             can_work_write=True,
             can_work_manage=False,
             can_rbac_admin=False,
+            can_ticket_write=False,
         ),
     },
     {
@@ -94,6 +100,7 @@ ROLE_DEFS = [
             can_work_write=True,
             can_work_manage=False,
             can_rbac_admin=False,
+            can_ticket_write=False,
         ),
     },
     {
@@ -107,6 +114,7 @@ ROLE_DEFS = [
             can_work_write=True,
             can_work_manage=False,
             can_rbac_admin=False,
+            can_ticket_write=False,
         ),
     },
     {
@@ -120,6 +128,7 @@ ROLE_DEFS = [
             can_work_write=True,
             can_work_manage=False,
             can_rbac_admin=False,
+            can_ticket_write=False,
         ),
     },
     {
@@ -133,6 +142,7 @@ ROLE_DEFS = [
             can_work_write=False,
             can_work_manage=False,
             can_rbac_admin=False,
+            can_ticket_write=True,
         ),
     },
     {
@@ -146,6 +156,7 @@ ROLE_DEFS = [
             can_work_write=False,
             can_work_manage=False,
             can_rbac_admin=False,
+            can_ticket_write=False,
         ),
     },
 ]
@@ -209,12 +220,26 @@ ROLE_MENU_KEYS = {
 WORK_CATEGORIES = [
     "development",
     "uat",
-    "training",
-    "demo",
-    "support_ops",
+    "testing",
+    "customer_demo",
     "documentation",
+    "training",
+    "support_ops",
     "other",
 ]
+
+# Alias used by task module (task_type)
+TASK_TYPES = WORK_CATEGORIES
+
+TASK_STATUSES = (
+    "backlog",
+    "todo",
+    "in_progress",
+    "in_review",
+    "blocked",
+    "done",
+    "cancelled",
+)
 
 
 async def seed_rbac():
@@ -268,9 +293,15 @@ async def seed_rbac():
                 upsert=True,
             )
 
-    # Ensure masters work categories
+    # Ensure masters work categories / task types
     await db.masters.update_one(
         {"id": "masters"},
-        {"$set": {"work_task_categories": [{"name": c} for c in WORK_CATEGORIES]}},
+        {
+            "$set": {
+                "work_task_categories": [{"name": c} for c in WORK_CATEGORIES],
+                "work_task_types": [{"name": c} for c in TASK_TYPES],
+                "work_task_statuses": [{"name": s} for s in TASK_STATUSES],
+            }
+        },
         upsert=True,
     )

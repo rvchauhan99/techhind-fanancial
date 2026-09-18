@@ -2,7 +2,7 @@
 
 **TechHind Company Finance (TCF)** — standalone single-company GST finance app (INR, FY Apr–Mar, series `TH/{FY}/{SEQ}`).
 
-**Last synced:** 2026-09-18 — Org RBAC (`org_roles`/`menus`/`role_menus`) + Work management (projects/tasks/activity); Support tickets + Critical hardening C1–C9 still in force.
+**Last synced:** 2026-09-18 — Support Module Pro (assignee/queue/category/SLA/internal notes/`can_ticket_write` + Solar bridge file download/filters); Task Pro + Org RBAC + Critical C1–C9 still in force.
 
 ## Not Solar CRM
 

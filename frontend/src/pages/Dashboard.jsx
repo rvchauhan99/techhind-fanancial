@@ -61,10 +61,11 @@ export default function Dashboard() {
   return (
     <Layout title="Dashboard">
       {work && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="work-kpi-grid">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3" data-testid="work-kpi-grid">
           <Kpi tid="kpi-my-open" title="My Open Tasks" value={work.my_open} sub="Assigned to me" icon={ListTodo} />
           <Kpi tid="kpi-my-overdue" title="My Overdue" value={work.my_overdue} sub="Past due date" icon={AlertTriangle} tone="text-amber-700" />
           <Kpi tid="kpi-all-overdue" title="Team Overdue" value={work.all_overdue} sub="All open overdue" icon={AlertTriangle} tone="text-red-700" />
+          <Kpi tid="kpi-reminders" title="Reminders Due" value={work.reminders_due || 0} sub={<Link to="/tasks?view=deadline" className="text-[#0066CC]">Deadline view →</Link>} icon={ListTodo} />
           <Kpi tid="kpi-active-projects" title="Active Projects" value={work.active_projects} sub="Planned + active" icon={FolderKanban} />
         </div>
       )}

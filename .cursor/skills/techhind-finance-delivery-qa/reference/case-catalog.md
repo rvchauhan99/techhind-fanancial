@@ -14,13 +14,14 @@ Distilled from `docs/PROD-READINESS-SIGN-OFF.md`, `docs/E2E-SIGN-OFF.md`, and `t
 | Payables / vouchers | PAY-01 … PAY-05 | Vendor bill ITC, vendor payment, expense |
 | Dashboard / aging | DASH-01 … DASH-04 | KPIs, AR/AP aging |
 | Import / reports / period | OPS-01 … OPS-06, OPS-PERIOD-DATE, OPS-IMPORT-PAY-01 | CSV, pack, GSTR, period lock, payment import txn |
-| Support tickets | SUP-01 … SUP-04 | Manual create, reply, status; Solar bridge key; attachment limits |
+| Support tickets | SUP-01 … SUP-04, SUP-10 … SUP-16 | Manual create/reply/status; bridge key; internal notes stripped; support_agent write; assignee/mine/SLA; email mock; Solar status filter + file download |
 | Org RBAC | RBAC-01 … RBAC-04 | Seed roles/menus; `/rbac/me` menus; developer finance 403; role menu update |
 | Work mgmt | WRK-01 … WRK-05 | Project+task CRUD; assignee any user; activity; viewer create 403; dashboard/report |
+| Task module Pro | TSK-01 … TSK-10 | Types/observers; start/complete; board/deadline; checklist; attachments; reminders; quick testing; viewer 403; reassign manage |
 
 ## Browser routes (16+)
 
-login, dashboard, subscriptions, invoices, invoice detail (+ Activity panel), expenses, settings, imports, accountant-pack, period-close, aging, customers, products, vendors, payments, audit (admin/accountant only), **support tickets** (`/tickets`), **projects / tasks / work-report / roles**.
+login, dashboard, subscriptions, invoices, invoice detail (+ Activity panel), expenses, settings, imports, accountant-pack, period-close, aging, customers, products, vendors, payments, audit (admin/accountant only), **support tickets** (`/tickets`), **projects / tasks (list|kanban|deadline) / task detail / work-report / roles**.
 
 Default web for local QA when `:3000` is busy: `WEB_BASE=http://localhost:3011`.
 

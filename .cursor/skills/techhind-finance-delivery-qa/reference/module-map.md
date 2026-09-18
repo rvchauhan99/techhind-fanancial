@@ -13,9 +13,9 @@
 | Reports / GSTR / pack | `routers/reports.py` | `/accountant-pack` | — | OPS-01…06 |
 | CSV import | `routers/imports.py` | `/imports` | (targets vary) | OPS-01…02, OPS-IMPORT-PAY-01 |
 | Audit / activity | `routers/dashboard.py` (`/audit`, `/activity`); `core.audit` | `/audit`; Activity panel on invoice detail | `audit_logs` | AUTH-AUDIT-01, AUD-01, AUD-ACT-01 |
-| Support tickets | `routers/tickets.py` | `/tickets`, `/tickets/:id` | `tickets`, `ticket_messages` | SUP-01… (Finance inbox + Solar bridge) |
+| Support tickets | `routers/tickets.py` | `/tickets`, `/tickets/:id` | `tickets`, `ticket_messages`, `notifications` | SUP-01…04, SUP-10…16 (ops: assignee/category/SLA/internal notes + Solar bridge files) |
 | Org RBAC | `routers/rbac.py`, `rbac_seed.py` | `/roles` (nav from `/rbac/me`) | `org_roles`, `menus`, `role_menus` | RBAC-01… |
-| Work (projects / tasks) | `routers/work.py` | `/projects`, `/projects/:id`, `/tasks`, `/tasks/:id`, `/work-report` | `projects`, `tasks`, `work_activity` | WRK-01… |
+| Work (projects / tasks) | `routers/work.py` | `/projects`, `/projects/:id`, `/tasks`, `/tasks/:id`, `/work-report` | `projects`, `tasks`, `work_activity` | WRK-01…, TSK-01… (List/Kanban/Deadline, checklist, files, observers, reminders) |
 | Email log | `email_service.py` | — | `email_log` | INV-05, CAT-05 |
 | Indexes / seed | `indexes.py`, `seed.py` | — | (all) | `make seed-qa` |
 

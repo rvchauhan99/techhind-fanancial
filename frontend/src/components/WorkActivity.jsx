@@ -7,14 +7,20 @@ import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { toast } from "sonner"
 
+const SYSTEM_ACTIONS = new Set([
+  "task_created", "task_updated", "task_assigned", "task_started", "task_completed",
+  "status_changed", "assignee_changed", "observer_added", "observer_removed",
+  "checklist_updated", "attachment_added", "attachment_removed",
+  "reminder_set", "reminder_cleared", "project_created", "project_updated",
+])
+
 /**
- * Work activity (comments + field diffs) for project/task entities.
+ * Chat-style activity feed for project/task with polling.
  */
-export default function WorkActivity({ entityType, entityId, canComment }) {
+export default function WorkActivity({ entityType, entityId, canComment, pollMs = 20000 }) {
   const { canCap } = useAuth()
   const [rows, setRows] = useState(null)
   const [body, setBody] = useState("")
-  const [openDiff, setOpenDiff] = useState("")
   const write = canComment ?? canCap("can_work_write")
 
   const load = () => {
@@ -23,12 +29,18 @@ export default function WorkActivity({ entityType, entityId, canComment }) {
       return
     }
     api
-      .get("/work/activity", { params: { entity_type: entityType, entity_id: entityId, limit: 80 } })
-      .then((r) => setRows(r.data || []))
+      .get("/work/activity", { params: { entity_type: entityType, entity_id: entityId, limit: 100 } })
+      .then((r) => setRows((r.data || []).slice().reverse()))
       .catch(() => setRows([]))
   }
 
-  useEffect(() => { load() }, [entityType, entityId])
+  useEffect(() => {
+    load()
+    if (!pollMs) return undefined
+    const t = setInterval(load, pollMs)
+    return () => clearInterval(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entityType, entityId, pollMs])
 
   const handleComment = async (e) => {
     e.preventDefault()
@@ -39,7 +51,7 @@ export default function WorkActivity({ entityType, entityId, canComment }) {
         : `/work/tasks/${entityId}/comments`
       await api.post(path, { body: body.trim() })
       setBody("")
-      toast.success("Comment added")
+      toast.success("Comment posted")
       load()
     } catch (err) {
       toast.error(apiError(err))
@@ -47,67 +59,52 @@ export default function WorkActivity({ entityType, entityId, canComment }) {
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-lg" data-testid="work-activity-panel">
-      <div className="px-3 py-2 border-b border-slate-100 text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
-        Activity
+    <div className="bg-white border border-slate-200 rounded-lg flex flex-col h-full min-h-[320px]" data-testid="work-activity-panel">
+      <div className="px-3 py-2 border-b border-slate-100 text-[11px] uppercase tracking-wider text-slate-500 font-semibold shrink-0">
+        Activity / Chat
+      </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-2 max-h-[55vh]" data-testid="activity-feed">
+        {(rows || []).map((r) => {
+          const isComment = r.action === "comment"
+          const isSystem = SYSTEM_ACTIONS.has(r.action) && !isComment
+          if (isSystem && !r.comment) {
+            return (
+              <div key={r.id} className="text-center text-[11px] text-slate-500 py-1" data-testid={`activity-sys-${r.id}`}>
+                <span className="font-medium text-slate-600">{r.user_name}</span>
+                {" · "}
+                {r.summary || r.action}
+                <span className="ml-1 font-mono text-[10px] text-slate-400">{fmtDateTime(r.ts)}</span>
+              </div>
+            )
+          }
+          return (
+            <div key={r.id} className="flex flex-col gap-0.5" data-testid={`activity-msg-${r.id}`}>
+              <div className="flex items-baseline gap-2">
+                <span className="text-xs font-semibold text-slate-800">{r.user_name}</span>
+                <span className="font-mono text-[10px] text-slate-400">{fmtDateTime(r.ts)}</span>
+              </div>
+              <div className="text-sm text-slate-700 bg-slate-50 border border-slate-100 rounded-md px-2.5 py-1.5 whitespace-pre-wrap">
+                {r.comment || r.summary}
+              </div>
+            </div>
+          )
+        })}
+        {rows && !rows.length && <Empty label="No activity yet" />}
       </div>
       {write && (
-        <form onSubmit={handleComment} className="px-3 py-2 border-b border-slate-100 flex gap-2">
+        <form onSubmit={handleComment} className="px-3 py-2 border-t border-slate-100 flex gap-2 shrink-0">
           <Input
             data-testid="work-comment-input"
             className="h-8 text-xs"
-            placeholder="Add a comment…"
+            placeholder="Write a comment… use @Name to mention"
             value={body}
             onChange={(e) => setBody(e.target.value)}
           />
           <Button data-testid="work-comment-submit" type="submit" size="sm" className="h-8 bg-[#0F284E] hover:bg-[#17386D] text-white shrink-0">
-            Post
+            Send
           </Button>
         </form>
       )}
-      <div className="max-h-80 overflow-y-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-slate-50 text-slate-600 text-[10px] uppercase tracking-wider sticky top-0">
-              <th className="text-left px-3 py-1.5">Time</th>
-              <th className="text-left px-3 py-1.5">User</th>
-              <th className="text-left px-3 py-1.5">Action</th>
-              <th className="text-left px-3 py-1.5">Detail</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(rows || []).map((r) => (
-              <React.Fragment key={r.id}>
-                <tr className="border-t border-slate-100 hover:bg-slate-50/80">
-                  <td className="px-3 py-1.5 font-mono text-[11px] text-slate-500 whitespace-nowrap">{fmtDateTime(r.ts)}</td>
-                  <td className="px-3 py-1.5 text-xs">{r.user_name}</td>
-                  <td className="px-3 py-1.5 text-xs font-medium">{r.action}</td>
-                  <td className="px-3 py-1.5 text-xs text-slate-700">
-                    {r.comment || r.summary}
-                    {r.diff && Object.keys(r.diff).length > 0 && (
-                      <button
-                        type="button"
-                        className="ml-2 text-[10px] text-[#0066CC] font-semibold"
-                        onClick={() => setOpenDiff(openDiff === r.id ? "" : r.id)}
-                      >
-                        {openDiff === r.id ? "Hide diff" : "Diff"}
-                      </button>
-                    )}
-                  </td>
-                </tr>
-                {openDiff === r.id && r.diff && (
-                  <tr className="bg-slate-50">
-                    <td colSpan={4} className="px-3 py-2">
-                      <pre className="text-[10px] font-mono text-slate-600 whitespace-pre-wrap">{JSON.stringify(r.diff, null, 2)}</pre>
-                    </td>
-                  </tr>
-                )}
-              </React.Fragment>
-            ))}
-          </tbody>
-        </table>
-        {rows && !rows.length && <Empty label="No activity yet" />}
-      </div>
     </div>
   )
 }

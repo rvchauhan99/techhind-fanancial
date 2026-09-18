@@ -37,6 +37,13 @@ ROUTES = [
     ("/vendors", "Vendors", False),
     ("/payments", "Payments", False),
     ("/audit", "Audit", False),
+    ("/tickets", "Support", False),
+    ("/projects", "Projects", False),
+    ("/tasks", "My Work", True),
+    ("/tasks?view=kanban", "Kanban", True),
+    ("/tasks?view=deadline", "Deadline", True),
+    ("/work-report", "Work Report", False),
+    ("/roles", "Roles", False),
 ]
 
 

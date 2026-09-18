@@ -110,7 +110,18 @@ export default function Customers() {
             <div><Label>Contact name</Label><Input value={form.contact_name} onChange={(e) => setForm({ ...form, contact_name: e.target.value })} /></div>
             <div><Label>Contact email</Label><Input type="email" value={form.contact_email} onChange={(e) => setForm({ ...form, contact_email: e.target.value })} /></div>
             <div><Label>Contact phone</Label><Input value={form.contact_phone} onChange={(e) => setForm({ ...form, contact_phone: e.target.value })} /></div>
-            <div><Label>CRM reference (optional)</Label><Input value={form.crm_tenant_key} onChange={(e) => setForm({ ...form, crm_tenant_key: e.target.value })} className="font-mono" /></div>
+            <div>
+              <Label>Solar tenant key (crm_tenant_key)</Label>
+              <Input
+                value={form.crm_tenant_key}
+                onChange={(e) => setForm({ ...form, crm_tenant_key: e.target.value })}
+                className="font-mono"
+                placeholder="Must match Solar tenant_key for support bridge"
+              />
+              <p className="text-[10px] text-slate-500 mt-0.5">
+                Required for Solar support tickets. Set to the tenant&apos;s Solar tenant_key — unmatched creates return 422.
+              </p>
+            </div>
             <div className="col-span-2 flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
               <Button data-testid="customer-save-btn" type="submit" disabled={busy} className="bg-[#0F284E] hover:bg-[#17386D] text-white">
