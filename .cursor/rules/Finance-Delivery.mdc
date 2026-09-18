@@ -1,0 +1,20 @@
+---
+description: Mandatory delivery and QA for TechHind Company Finance
+alwaysApply: true
+---
+
+# Finance delivery standards
+
+Before marking **any** task complete:
+
+1. Follow `.cursor/skills/techhind-finance-delivery-qa/SKILL.md`.
+2. Default local: API `http://127.0.0.1:8000`, web `http://localhost:3000`.
+3. Pick verification tier (Smoke / Standard / Critical / Regression) — do not skip.
+4. Money, GST, ledger, period close, or RBAC changes require **Critical** minimum.
+
+## Completion message must include
+
+- **Test tier** used
+- **Cases run** (test IDs or steps)
+- **Skipped** cases with reason
+- **Evidence** (route, API endpoint, or screenshot note)

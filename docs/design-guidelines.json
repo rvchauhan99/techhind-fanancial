@@ -1,0 +1,202 @@
+{
+  "theme": {
+    "default_mode": "light",
+    "support_dark_mode": true,
+    "archetype": "Swiss & High-Contrast (Fintech & Precision Governance)",
+    "description": "Desktop-first dense ERP layout tailored for TechHind Pvt Ltd Indian SaaS accounting, compliant with Indian GST rules, fiscal year (1 Apr - 31 Mar), and high-contrast precision tokens."
+  },
+  "typography": {
+    "font_family_headings": "Outfit, Cabinet Grotesk, -apple-system, sans-serif",
+    "font_family_body": "IBM Plex Sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    "font_family_mono": "'JetBrains Mono', 'IBM Plex Mono', Menlo, monospace",
+    "scale": {
+      "h1": "text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100",
+      "h2": "text-xl sm:text-2xl font-semibold tracking-tight text-slate-800 dark:text-slate-100",
+      "h3": "text-lg sm:text-xl font-semibold text-slate-800 dark:text-slate-200",
+      "h4": "text-sm sm:text-base font-semibold text-slate-700 dark:text-slate-200",
+      "body": "text-sm leading-normal text-slate-700 dark:text-slate-300",
+      "caption": "text-xs font-medium text-slate-500 dark:text-slate-400",
+      "currency_metric": "font-mono font-bold tracking-tight text-slate-900 dark:text-slate-50",
+      "badge": "text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded"
+    },
+    "guidelines": "Never use Inter for headings. Use IBM Plex Mono / JetBrains Mono for GST numbers (GSTIN), invoice numbers (TH/2025-26/0042), HSN/SAC codes, and INR amounts. All INR currency must display standard Indian number groupings (e.g. ₹12,45,500.00)."
+  },
+  "colors": {
+    "palette": {
+      "brand_primary": "#0F284E",
+      "brand_primary_hover": "#17386D",
+      "brand_accent": "#0066CC",
+      "brand_navy": "#0B192C",
+      "canvas_light": "#F8FAFC",
+      "surface_card_light": "#FFFFFF",
+      "surface_header_light": "#FFFFFF",
+      "border_light": "#E2E8F0",
+      "border_dense": "#CBD5E1",
+      "text_primary_light": "#0F172A",
+      "text_secondary_light": "#475569",
+      "text_muted_light": "#64748B",
+      "status_success": "#16A34A",
+      "status_success_bg": "#DCFCE7",
+      "status_warning": "#D97706",
+      "status_warning_bg": "#FEF3C7",
+      "status_danger": "#DC2626",
+      "status_danger_bg": "#FEE2E2",
+      "status_info": "#2563EB",
+      "status_info_bg": "#DBEAFE",
+      "status_neutral": "#64748B",
+      "status_neutral_bg": "#F1F5F9"
+    },
+    "gst_tags": {
+      "cgst_sgst": {
+        "text": "#047857",
+        "bg": "#ECFDF5",
+        "border": "#A7F3D0",
+        "label": "Intra-State (CGST + SGST)"
+      },
+      "igst": {
+        "text": "#4338CA",
+        "bg": "#EEF2FF",
+        "border": "#C7D2FE",
+        "label": "Inter-State (IGST)"
+      },
+      "export_sez": {
+        "text": "#0369A1",
+        "bg": "#F0F9FF",
+        "border": "#BAE6FD",
+        "label": "Zero-Rated / SEZ"
+      }
+    },
+    "rules": "High contrast is critical for financial accuracy. Never use pure transparent backgrounds on floating dropdowns, popovers, or modal sheets. Buttons should have distinct active and hover states."
+  },
+  "layout_and_grids": {
+    "workspace_structure": {
+      "layout_type": "Desktop-first Left-nav Workspace with Top Contextual Command Bar",
+      "sidebar_width": "w-64 shrink-0 bg-slate-900 text-slate-200 border-r border-slate-800",
+      "header_height": "h-14 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800 px-6 sticky top-0 z-40",
+      "sub_strip_height": "h-11 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700/60 px-6 flex items-center justify-between",
+      "action_strips": {
+        "nearby_renewals": "Persistent high-visibility strip showing Overdue (Red), 7 Days (Amber), 15 Days (Blue), 30 Days renewals count with 1-click filter",
+        "operational_queue": "Persistent counter strip showing: Invoices Pending Approval, Unallocated Receipts, Unapproved Expense Vouchers, Period Close Checklist"
+      },
+      "content_container": "p-5 md:p-6 max-w-[1720px] mx-auto space-y-6"
+    },
+    "density_mode": "Compact High-Density (Mode B: High Density Grid)",
+    "table_specifications": {
+      "row_height": "h-11 md:h-10",
+      "padding": "px-3 py-2 text-xs md:text-sm",
+      "header_style": "bg-slate-100 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 font-semibold uppercase tracking-wider text-[11px] border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10",
+      "borders": "border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden shadow-xs",
+      "hover": "hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors",
+      "actions": "Inline actions dropdown or quick action icons (Edit, View PDF, Approve, Record Payment, Download CSV)"
+    }
+  },
+  "navigation_structure": [
+    {
+      "section": "Core Operations",
+      "items": [
+        { "name": "Dashboard & KPIs", "icon": "LayoutDashboard", "path": "/dashboard" },
+        { "name": "Nearby Renewals Strip", "icon": "ClockAlert", "path": "/renewals" },
+        { "name": "Operational Queue", "icon": "Layers3", "path": "/queue" }
+      ]
+    },
+    {
+      "section": "Revenue & GST Invoicing",
+      "items": [
+        { "name": "Tax Invoices", "icon": "FileText", "path": "/invoices" },
+        { "name": "Credit & Debit Notes", "icon": "FileDiff", "path": "/notes" },
+        { "name": "Payments & Receipts", "icon": "ReceiptIndianRupee", "path": "/payments" },
+        { "name": "Customers 360", "icon": "Building2", "path": "/customers" },
+        { "name": "Subscriptions Catalog", "icon": "Repeat", "path": "/subscriptions" },
+        { "name": "Product & Plan Masters", "icon": "Package", "path": "/products" }
+      ]
+    },
+    {
+      "section": "Payables & Expenses",
+      "items": [
+        { "name": "Vendors & Bills (ITC)", "icon": "Briefcase", "path": "/vendors" },
+        { "name": "Expense Vouchers", "icon": "Wallet", "path": "/expenses" },
+        { "name": "AR / AP Aging Matrix", "icon": "CalendarClock", "path": "/aging" }
+      ]
+    },
+    {
+      "section": "Governance & Compliance",
+      "items": [
+        { "name": "Period Close & Lock", "icon": "Lock", "path": "/period-close" },
+        { "name": "Accountant Pack & Export", "icon": "FolderArchive", "path": "/accountant-pack" },
+        { "name": "Company Masters & Tax", "icon": "Settings", "path": "/masters" },
+        { "name": "Audit Trail & RBAC", "icon": "ShieldCheck", "path": "/audit" }
+      ]
+    }
+  ],
+  "components_and_features": {
+    "dashboard_kpis": [
+      { "id": "mrr_arr", "title": "SaaS MRR / ARR", "sub": "Monthly Recurring vs Annualised", "type": "currency" },
+      { "id": "net_billed_month", "title": "Net Billed This Month", "sub": "Tax Invoices Approved (excl. Credit Notes)", "type": "currency" },
+      { "id": "gst_liability", "title": "Estimated Net GST Liability", "sub": "Output Tax (CGST+SGST+IGST) less Eligible ITC", "type": "currency" },
+      { "id": "ar_overdue", "title": "Overdue Receivables (AR)", "sub": "Total overdue across 30/60/90+ days buckets", "type": "currency" },
+      { "id": "active_subscriptions", "title": "Active Subscriptions", "sub": "Total active SaaS contracts & add-ons", "type": "count" }
+    ],
+    "gst_engine_spec": {
+      "rules": [
+        "Company Origin: Karnataka (29 - Bangalore)",
+        "Same State Customer (POS = 29): Apply CGST 9% + SGST 9% (for 18% slab) or matching split",
+        "Inter-State Customer (POS != 29): Apply IGST 18% (single tax line)",
+        "SEZ / Export Customer: Zero Rated with LUT or IGST with refund flag",
+        "Invoice Round-off: Automatic Indian currency round-off to nearest integer (e.g. +₹0.32 or -₹0.48)",
+        "Numbering Series: Strict format TH/{FY}/{SEQ:4} e.g. TH/2025-26/0001",
+        "Immutability: Status transitions Draft -> Approved (Locked) -> Paid / Partial. Once Approved, fields are immutable. Corrections only via Credit/Debit Notes."
+      ]
+    },
+    "nearby_renewals_strip": {
+      "buckets": [
+        { "key": "overdue", "label": "Overdue Renewals", "color": "text-red-700 bg-red-50 border-red-200" },
+        { "key": "in_7_days", "label": "Expiring in 7 Days", "color": "text-amber-800 bg-amber-50 border-amber-200" },
+        { "key": "in_15_days", "label": "Expiring in 15 Days", "color": "text-blue-800 bg-blue-50 border-blue-200" },
+        { "key": "in_30_days", "label": "Expiring in 30 Days", "color": "text-slate-700 bg-slate-100 border-slate-200" }
+      ]
+    },
+    "branded_pdf_spec": {
+      "theme": "Official TechHind Tax Invoice",
+      "header": {
+        "company_name": "TechHind Pvt Ltd",
+        "cin": "U72200KA2021PTC148892",
+        "gstin": "29AABCT1942M1ZQ",
+        "registered_office": "Level 6, TechHind Tower, Outer Ring Road, Bellandur, Bengaluru, Karnataka 560103",
+        "email": "finance@techhind.com",
+        "phone": "+91 80 4912 8800"
+      },
+      "sections": [
+        "Header with TechHind brand styling and GSTIN badge",
+        "Invoice Metadata: Invoice No, Invoice Date, Due Date, Place of Supply (State & Code), Reverse Charge (Y/N)",
+        "Billed To vs Shipped To: Customer Legal Name, Trade Name, GSTIN, Full Address, State & Code",
+        "Itemized Table: Sl No, Description of Service/SaaS Plan, HSN/SAC Code, Qty, Unit, Rate, Discount, Taxable Value, GST Rate, CGST, SGST/IGST, Total (INR)",
+        "Tax Summary Table: Detailed HSN/SAC-wise breakup with taxable amount and split tax amounts",
+        "Total Calculations: Sub-Total, Total Tax, Round Off (+/-), Total Invoice Value in Words (e.g., 'Rupees Twelve Lakh Forty-Five Thousand Only')",
+        "Bank Details for NEFT/RTGS: Bank Name, Account Name, Account Number, IFSC Code, Branch, UPI ID",
+        "Authorized Signatory box with Digital Stamp placeholder and Terms & Conditions"
+      ]
+    }
+  },
+  "visual_enhancers": {
+    "texture": "Clean engineered paper feel with micro 1px border lines and slate slate-50/slate-100 alternating zebra rows on dense ledgers.",
+    "badges": "Structured pill and square tags for status (Draft, Pending Approval, Approved/Locked, Partially Paid, Paid, Overdue, Cancelled).",
+    "charts": "Recharts with crisp dual-tone fills (TechHind Blue #0F284E and Emerald Green #10B981), minimal grid lines, and interactive tooltip formatting with ₹ symbol."
+  },
+  "image_urls": {
+    "company_building": "https://images.unsplash.com/photo-1763234110845-29547470e9f2?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "company_headquarters": "https://images.unsplash.com/photo-1720954006045-6b801f7f919e?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "abstract_brand_emblem": "https://images.unsplash.com/photo-1782916679042-dd2825f1da11?crop=entropy&cs=srgb&fm=jpg&q=85"
+  },
+  "instructions_to_main_agent": {
+    "role_management": "Implement 4 distinct RBAC personas: Admin (full access), Accountant (create/approve invoices, journals, payments, period close), Ops (create draft invoices, manage customer subscriptions & renewals), Viewer (strictly read-only on all financial data, restricted from settings). Provide a quick role-switcher in the top header for instant demo/testing.",
+    "totp_2fa_mock": "Include an optional TOTP 2FA flow on login/security settings with standard 6-digit verification code mockup and backup codes generator.",
+    "audit_trail_trigger": "Every critical action (Invoice Created, Invoice Approved, Payment Recorded, Expense Approved, Period Closed, Master Updated) MUST log an entry with Timestamp, User, Role, Action Type, Entity ID, and Diff Summary.",
+    "data_testids": "All buttons, tabs, inputs, filters, action triggers, and summary stat cards MUST include clear data-testid attributes (e.g. data-testid='approve-invoice-btn', data-testid='kpi-mrr-card', data-testid='nearby-renewals-strip').",
+    "file_structure": "Ensure all files are created as modern React .js/.jsx components with Tailwind CSS and Radix UI / lucide-react."
+  },
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": {
+    "anti_ai_slop": "Never render plain boring cards or generic empty layouts. Build rich mock datasets representing an authentic Indian SaaS company (e.g. clients like Swiggy, Razorpay, Zepto, Zerodha, InfoEdge, Flipkart, Zoho) with real Indian GSTIN numbers, state codes (29-KA, 27-MH, 07-DL, 33-TN), HSN 998313 / 998314 for SaaS software, 18% GST.",
+    "navigation_discipline": "Always display the left-nav workspace with collapsible sections, clear active highlighting, and badged counts on action strips.",
+    "modal_and_sheets": "Use solid backgrounds with crisp borders for all dialogs and drawer sheets. Never use transparent backgrounds."
+  }
+}

@@ -1,0 +1,17 @@
+---
+description: GST, billing, payables, and period-close invariants
+globs: backend/gst.py,backend/pdf.py,backend/routers/billing.py,backend/routers/payables.py,backend/routers/periods.py
+alwaysApply: false
+---
+
+# Finance GST rules
+
+Read `.cursor/skills/techhind-finance-delivery-qa/reference/gst-invariants.md`.
+
+Non-negotiables:
+
+- Intra-state → CGST+SGST; inter-state → IGST
+- Approve assigns `TH/{FY}/{SEQ}`; cancel does not reuse numbers
+- Approved docs immutable; period `closed` locks mutations
+- IRN/QR is mock until NIC
+- Changes here → **Critical** tier + relevant INV/PAY/OPS case IDs

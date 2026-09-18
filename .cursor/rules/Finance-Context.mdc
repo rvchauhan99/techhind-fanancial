@@ -1,0 +1,12 @@
+---
+description: Token-efficient context — read AGENTS.md first; no full-repo scan
+alwaysApply: true
+---
+
+# Finance context
+
+1. Read [AGENTS.md](../../AGENTS.md) at session start.
+2. Open **one** annex under `.cursor/skills/techhind-finance-delivery-qa/reference/` for the task.
+3. Do **not** explore entire `backend/` + `frontend/` unless AGENTS.md is stale or the user asks to resync.
+4. This is **not** TechHind Solar (no Nest, no tenants, no port 5142).
+5. After route/collection/GST/UI changes, run the **techhind-finance-context-sync** skill.

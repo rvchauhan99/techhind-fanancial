@@ -1,0 +1,15 @@
+---
+description: Dense finance UI, INR formatting, data-testid conventions
+globs: frontend/src/**
+alwaysApply: false
+---
+
+# Finance UI rules
+
+Read `.cursor/skills/techhind-finance-delivery-qa/reference/design.md` and `docs/design-guidelines.json`.
+
+- Maximize data density; minimize padding/spacing
+- Use existing Layout, shadcn/Radix, and page patterns
+- INR Indian grouping; mono for GSTIN / invoice nos / HSN
+- Required interactive controls need kebab-case `data-testid`
+- Solid modal/drawer backgrounds — no transparent sheets

@@ -1,0 +1,253 @@
+import React, { useEffect, useState } from "react"
+import { NavLink, useNavigate, useLocation } from "react-router-dom"
+import {
+  LayoutDashboard, FileText, ReceiptIndianRupee, Building2, Repeat, Package,
+  Briefcase, Wallet, CalendarClock, ShieldCheck, Settings, LogOut, ClockAlert,
+  Layers3, Lock, FolderArchive, Upload, LifeBuoy, FolderKanban, ListTodo,
+  BarChart3, Users, Circle,
+} from "lucide-react"
+import api from "../lib/api"
+import { fmtINR } from "../lib/format"
+import { useAuth } from "../context/AuthContext"
+
+const ICON_MAP = {
+  LayoutDashboard,
+  FileText,
+  ReceiptIndianRupee,
+  Building2,
+  Repeat,
+  Package,
+  Briefcase,
+  Wallet,
+  CalendarClock,
+  ShieldCheck,
+  Settings,
+  Lock,
+  FolderArchive,
+  Upload,
+  LifeBuoy,
+  FolderKanban,
+  ListTodo,
+  BarChart3,
+  Users,
+  Circle,
+}
+
+const FALLBACK_NAV = [
+  { section: "Core", items: [
+    { name: "Dashboard", icon: LayoutDashboard, path: "/dashboard", tid: "nav-dashboard", key: "dashboard" },
+    { name: "Support Tickets", icon: LifeBuoy, path: "/tickets", tid: "nav-tickets", key: "tickets" },
+  ] },
+  {
+    section: "Revenue & GST",
+    items: [
+      { name: "Invoices & Notes", icon: FileText, path: "/invoices", tid: "nav-invoices", key: "invoices" },
+      { name: "Payments & Receipts", icon: ReceiptIndianRupee, path: "/payments", tid: "nav-payments", key: "payments" },
+      { name: "Customers 360", icon: Building2, path: "/customers", tid: "nav-customers", key: "customers" },
+      { name: "Subscriptions", icon: Repeat, path: "/subscriptions", tid: "nav-subscriptions", key: "subscriptions" },
+      { name: "Products & Plans", icon: Package, path: "/products", tid: "nav-products", key: "products" },
+    ],
+  },
+  {
+    section: "Payables & Expenses",
+    items: [
+      { name: "Vendors & Bills", icon: Briefcase, path: "/vendors", tid: "nav-vendors", key: "vendors" },
+      { name: "Expense Vouchers", icon: Wallet, path: "/expenses", tid: "nav-expenses", key: "expenses" },
+      { name: "AR / AP Aging", icon: CalendarClock, path: "/aging", tid: "nav-aging", key: "aging" },
+    ],
+  },
+  {
+    section: "Governance",
+    items: [
+      { name: "Period Close", icon: Lock, path: "/period-close", tid: "nav-period-close", key: "period_close" },
+      { name: "Accountant Pack", icon: FolderArchive, path: "/accountant-pack", tid: "nav-accountant-pack", key: "accountant_pack" },
+      { name: "CSV Import", icon: Upload, path: "/imports", tid: "nav-imports", key: "imports" },
+      { name: "Audit Trail", icon: ShieldCheck, path: "/audit", tid: "nav-audit", key: "audit" },
+      { name: "Settings & Masters", icon: Settings, path: "/settings", tid: "nav-settings", key: "settings" },
+    ],
+  },
+]
+
+const ROLE_BADGE = {
+  admin: "bg-red-500/15 text-red-300 border-red-400/30",
+  accountant: "bg-emerald-500/15 text-emerald-300 border-emerald-400/30",
+  ops: "bg-blue-500/15 text-blue-300 border-blue-400/30",
+  viewer: "bg-slate-500/15 text-slate-300 border-slate-400/30",
+  developer: "bg-violet-500/15 text-violet-300 border-violet-400/30",
+  project_manager: "bg-cyan-500/15 text-cyan-300 border-cyan-400/30",
+  qa: "bg-orange-500/15 text-orange-300 border-orange-400/30",
+  trainer: "bg-pink-500/15 text-pink-300 border-pink-400/30",
+  sales: "bg-amber-500/15 text-amber-300 border-amber-400/30",
+  support_agent: "bg-teal-500/15 text-teal-300 border-teal-400/30",
+  hr: "bg-slate-500/15 text-slate-300 border-slate-400/30",
+}
+
+function buildNavFromMenus(menus) {
+  if (!menus?.length) return null
+  const bySection = {}
+  for (const m of menus) {
+    const section = m.section || "Core"
+    if (!bySection[section]) bySection[section] = []
+    const Icon = ICON_MAP[m.icon] || Circle
+    bySection[section].push({
+      name: m.label,
+      icon: Icon,
+      path: m.path,
+      tid: `nav-${m.key}`,
+      key: m.key,
+    })
+  }
+  return Object.entries(bySection).map(([section, items]) => ({ section, items }))
+}
+
+function ActionStrips() {
+  const [renewals, setRenewals] = useState(null)
+  const [queue, setQueue] = useState(null)
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { hasMenu, menus } = useAuth()
+  const showFinance = !menus?.length || hasMenu("invoices") || hasMenu("subscriptions")
+
+  useEffect(() => {
+    if (!showFinance) return
+    (async () => {
+      try {
+        const [r, q] = await Promise.all([api.get("/subscriptions/renewals"), api.get("/queue")])
+        setRenewals(r.data)
+        setQueue(q.data)
+      } catch {}
+    })()
+  }, [location.pathname, showFinance])
+
+  if (!showFinance) return null
+
+  const buckets = [
+    { key: "overdue", label: "Overdue", cls: "text-red-700 bg-red-50 border-red-200", dot: "bg-red-500" },
+    { key: "in_7_days", label: "≤ 7 days", cls: "text-amber-800 bg-amber-50 border-amber-200", dot: "bg-amber-500" },
+    { key: "in_15_days", label: "≤ 15 days", cls: "text-blue-800 bg-blue-50 border-blue-200", dot: "bg-blue-500" },
+    { key: "in_30_days", label: "≤ 30 days", cls: "text-slate-700 bg-slate-100 border-slate-200", dot: "bg-slate-400" },
+  ]
+
+  return (
+    <div data-testid="action-strips" className="h-11 bg-slate-50 border-b border-slate-200 px-6 flex items-center justify-between gap-4 overflow-x-auto">
+      <div className="flex items-center gap-2 shrink-0" data-testid="nearby-renewals-strip">
+        <ClockAlert className="w-4 h-4 text-slate-500 shrink-0" />
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 shrink-0">Renewals</span>
+        {buckets.map((b) => (
+          <button
+            key={b.key}
+            data-testid={`renewals-bucket-${b.key}`}
+            onClick={() => navigate(`/subscriptions?bucket=${b.key}`)}
+            className={`flex items-center gap-1.5 border rounded px-2 py-0.5 text-xs font-semibold transition-transform hover:-translate-y-px ${b.cls}`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${b.dot}`} />
+            {b.label}
+            <span className="font-mono font-bold">{renewals ? renewals.counts[b.key] : "–"}</span>
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 shrink-0" data-testid="operational-queue-strip">
+        <Layers3 className="w-4 h-4 text-slate-500 shrink-0" />
+        <button data-testid="queue-drafts" onClick={() => navigate("/invoices?status=draft")}
+          className="text-xs text-slate-600 hover:text-slate-900 border border-slate-200 bg-white rounded px-2 py-0.5 transition-colors">
+          Drafts <span className="font-mono font-bold">{queue ? queue.draft_invoices : "–"}</span>
+        </button>
+        <button data-testid="queue-pending-vouchers" onClick={() => navigate("/expenses?status=pending_approval")}
+          className="text-xs text-slate-600 hover:text-slate-900 border border-slate-200 bg-white rounded px-2 py-0.5 transition-colors">
+          Vouchers to approve <span className="font-mono font-bold">{queue ? queue.pending_vouchers : "–"}</span>
+        </button>
+        <button data-testid="queue-overdue-invoices" onClick={() => navigate("/aging")}
+          className="text-xs text-slate-600 hover:text-slate-900 border border-slate-200 bg-white rounded px-2 py-0.5 transition-colors">
+          Overdue invoices <span className="font-mono font-bold">{queue ? queue.overdue_invoices : "–"}</span>
+        </button>
+        <span className="text-xs text-slate-600 border border-slate-200 bg-white rounded px-2 py-0.5">
+          Unallocated <span className="font-mono font-bold">{queue ? fmtINR(queue.unallocated_receipts) : "–"}</span>
+        </span>
+      </div>
+    </div>
+  )
+}
+
+export default function Layout({ children, title, actions }) {
+  const { user, logout, menus } = useAuth()
+  const navigate = useNavigate()
+  const nav = buildNavFromMenus(menus) || FALLBACK_NAV
+
+  return (
+    <div className="flex h-screen bg-[#F8FAFC] overflow-hidden">
+      <aside className="w-60 shrink-0 bg-[#0B192C] text-slate-300 flex flex-col">
+        <div className="h-14 flex items-center gap-2.5 px-5 border-b border-slate-800">
+          <div className="w-7 h-7 rounded bg-[#0066CC] flex items-center justify-center text-white font-bold text-sm font-heading">TH</div>
+          <div>
+            <div className="text-sm font-bold text-white font-heading tracking-tight leading-tight">TechHind Finance</div>
+            <div className="text-[10px] text-slate-500 leading-tight">Single-company ERP</div>
+          </div>
+        </div>
+        <nav className="flex-1 overflow-y-auto py-3 px-2.5 space-y-4" data-testid="sidebar-nav">
+          {nav.map((sec) => (
+            <div key={sec.section}>
+              <div className="px-2.5 mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-500">{sec.section}</div>
+              <div className="space-y-0.5">
+                {sec.items.map((item) => (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    data-testid={item.tid}
+                    className={({ isActive }) =>
+                      `flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium transition-colors ${
+                        isActive ? "bg-[#0066CC] text-white" : "hover:bg-slate-800/70 hover:text-white"
+                      }`
+                    }
+                  >
+                    <item.icon className="w-4 h-4 shrink-0" />
+                    {item.name}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
+          ))}
+        </nav>
+        <div className="p-3 border-t border-slate-800">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white">
+              {(user?.name || "?").split(" ").map((x) => x[0]).slice(0, 2).join("")}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-semibold text-white truncate" data-testid="user-name">{user?.name}</div>
+              <span className={`text-[10px] font-semibold uppercase tracking-wider border rounded px-1.5 py-px ${ROLE_BADGE[user?.role] || "bg-slate-500/15 text-slate-300 border-slate-400/30"}`} data-testid="user-role-badge">
+                {user?.role}
+              </span>
+            </div>
+            <button data-testid="logout-btn" onClick={async () => { await logout(); navigate("/login") }}
+              className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors" title="Sign out">
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </aside>
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="h-14 bg-white/95 backdrop-blur border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-40">
+          <h1 className="text-lg font-bold tracking-tight text-slate-900 font-heading" data-testid="page-title">{title}</h1>
+          <div className="flex items-center gap-2">{actions}</div>
+        </header>
+        <ActionStrips />
+        <main className="flex-1 overflow-y-auto p-5 md:p-6">
+          <div className="max-w-[1720px] mx-auto space-y-6">{children}</div>
+        </main>
+      </div>
+    </div>
+  )
+}
+
+export function StatusBadge({ value }) {
+  const { STATUS_STYLES, STATUS_LABELS } = require("../lib/format")
+  return (
+    <span data-testid={`status-${value}`} className={`inline-block text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded border ${STATUS_STYLES[value] || STATUS_STYLES.draft}`}>
+      {STATUS_LABELS[value] || value}
+    </span>
+  )
+}
+
+export function Empty({ label }) {
+  return <div className="px-4 py-8 text-center text-sm text-slate-400" data-testid="empty-state">{label}</div>
+}
