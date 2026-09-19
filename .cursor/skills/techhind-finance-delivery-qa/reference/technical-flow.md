@@ -21,7 +21,8 @@
 | `backend/storage.py` | R2 → local FS |
 | `backend/email_service.py` | Brevo or mock |
 | `backend/seed.py` | Demo / seed data |
-| `backend/routers/*.py` | auth, settings, catalog, billing, payables, dashboard, periods, reports, imports |
+| `backend/routers/*.py` | auth, settings, catalog, billing, payables, banks, dashboard, periods, reports, imports |
+| `backend/bank_ledger.py` | Bank statement engine (post/reverse/running balance) |
 
 ## Frontend layout
 

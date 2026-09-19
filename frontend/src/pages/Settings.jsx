@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { Plus, Trash2, Upload, KeyRound, ShieldCheck, ShieldOff } from "lucide-react";
 import { toast } from "sonner";
 import api, { apiError, pdfUrl } from "../lib/api";
@@ -171,7 +172,6 @@ function MastersTab() {
       {[["hsn", "HSN / SAC Codes", "hsn_codes", [["code", "Code"], ["description", "Description"], ["default_rate", "GST%"]]],
         ["rates", "Tax Rates", "tax_rates", [["rate", "Rate %"], ["label", "Label"]]],
         ["cats", "Expense Categories", "expense_categories", [["name", "Category name"]]],
-        ["banks", "Bank Accounts", "banks", [["bank_name", "Bank"], ["account_no", "A/c No"], ["ifsc", "IFSC"], ["branch", "Branch"]]],
       ].map(([tid, title, section, fields]) => (
         <div key={section} className="space-y-2">
           <MastersSection tid={`master-${tid}`} title={title} section={section} fields={fields}
@@ -180,6 +180,19 @@ function MastersTab() {
             className="bg-[#0F284E] hover:bg-[#17386D] text-white">Save {title}</Button>}
         </div>
       ))}
+      <div className="space-y-2" data-testid="master-banks-panel">
+        <div className="bg-white border border-slate-200 rounded-lg p-3">
+          <h3 className="text-sm font-semibold text-slate-800 mb-1">Bank Accounts</h3>
+          <p className="text-xs text-slate-500 mb-2">
+            Bank books, opening balances, and statement import live under Bank Ledger.
+            Company PDF bank details stay on the Company tab (synced from the primary account).
+          </p>
+          <Link to="/banks" data-testid="master-banks-link"
+            className="inline-flex text-xs font-semibold text-[#0066CC] hover:underline">
+            Open Bank Ledger →
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }

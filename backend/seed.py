@@ -155,13 +155,14 @@ def _mk_invoice(cust, lines, inv_date: date, status, company, products, sub_id=N
     return inv
 
 
-def _mk_payment(cust, pay_date: date, amount, inv_allocs, method="upi", ref=""):
+def _mk_payment(cust, pay_date: date, amount, inv_allocs, method="upi", ref="", bank_id=""):
     receipt_no = _num("RCP", pay_date)
     allocs = [{"invoice_id": inv["id"], "amount": r2(amt), "invoice_no": inv.get("invoice_no"),
                "invoice_date": inv.get("invoice_date")} for inv, amt in inv_allocs]
     return {"id": new_id(), "receipt_no": receipt_no, "customer_id": cust["id"],
             "customer_name": cust["legal_name"], "payment_date": pay_date.isoformat(),
             "amount": r2(amount), "method": method, "reference_no": ref,
+            "bank_id": bank_id, "tds_amount": 0.0,
             "allocations": allocs, "unallocated": r2(amount - sum(a["amount"] for a in allocs)),
             "notes": "", "created_by": "seed", "created_at": iso_now()}
 
@@ -174,12 +175,13 @@ COLLECTIONS = (
     "expense_vouchers", "number_series", "audit_logs", "periods", "email_log",
     "files", "login_attempts", "tickets", "ticket_messages",
     "org_roles", "menus", "role_menus", "projects", "tasks", "work_activity",
+    "bank_accounts", "bank_ledger",
 )
 
 
 def _assert_qa_db():
     import os
-    name = (os.environ.get("DB_NAME") or "").strip()
+    name = (os.environ.get("DB_NAME") or os.environ.get("MONGO_DATABASE") or "").strip()
     if not any(name.endswith(s) for s in QA_DB_SUFFIXES):
         raise RuntimeError(
             f"Refusing destructive seed: DB_NAME={name!r} must end with "
@@ -195,12 +197,62 @@ async def reset_qa_and_seed():
     await seed_all(force=True)
 
 
+async def ensure_bank_accounts():
+    """Idempotent: create HDFC/ICICI/Cash if bank_accounts is empty."""
+    if await db.bank_accounts.count_documents({}) > 0:
+        return
+    t = date.today()
+    opening = (t - timedelta(days=120)).isoformat()
+    bank_hdfc = {
+        "id": new_id(), "account_type": "bank",
+        "bank_name": "HDFC Bank", "account_name": "TechHind Pvt Ltd",
+        "account_no": "50200088765432", "ifsc": "HDFC0001207",
+        "branch": "SG Highway, Ahmedabad", "upi": "techhind@hdfcbank",
+        "opening_balance": 0.0, "opening_date": opening,
+        "primary": True, "is_active": True,
+        "created_by": "seed", "created_at": iso_now(),
+    }
+    bank_icici = {
+        "id": new_id(), "account_type": "bank",
+        "bank_name": "ICICI Bank", "account_name": "TechHind Pvt Ltd",
+        "account_no": "120405500998", "ifsc": "ICIC0001204",
+        "branch": "Prahladnagar, Ahmedabad", "upi": "",
+        "opening_balance": 0.0, "opening_date": opening,
+        "primary": False, "is_active": True,
+        "created_by": "seed", "created_at": iso_now(),
+    }
+    bank_cash = {
+        "id": new_id(), "account_type": "cash",
+        "bank_name": "Cash", "account_name": "TechHind Pvt Ltd",
+        "account_no": "", "ifsc": "", "branch": "", "upi": "",
+        "opening_balance": 0.0, "opening_date": opening,
+        "primary": False, "is_active": True,
+        "created_by": "seed", "created_at": iso_now(),
+    }
+    await db.bank_accounts.insert_many([bank_hdfc, bank_icici, bank_cash])
+
+
 async def seed_all(force: bool = False):
+    """Seed demo data on QA DBs only. Non-QA: RBAC + bank shells, never UrbanKart demo."""
+    import os
     from rbac_seed import seed_rbac
+
+    db_name = (os.environ.get("DB_NAME") or os.environ.get("MONGO_DATABASE") or "").strip()
+    is_qa = any(db_name.endswith(s) for s in QA_DB_SUFFIXES)
+    if not is_qa:
+        if force:
+            raise RuntimeError(
+                f"Refusing seed_all(force) on non-QA database {db_name!r}. "
+                "Use scripts.prod_bootstrap for production."
+            )
+        await seed_rbac()
+        await ensure_bank_accounts()
+        return
 
     if not force and await db.users.count_documents({}) > 0:
         await seed_rbac()
-        # Upsert any missing demo org users (idempotent by email)
+        await ensure_bank_accounts()
+        # Upsert any missing demo org users (idempotent by email) — QA only
         for name, email, pw, role in USERS:
             existing = await db.users.find_one({"email": email})
             if existing:
@@ -245,6 +297,45 @@ async def seed_all(force: bool = False):
     cmap = {c["trade_name"]: c for c in customers}
 
     t = date.today()
+
+    # Bank accounts — HDFC (primary), ICICI, Cash
+    bank_hdfc = {
+        "id": new_id(), "account_type": "bank",
+        "bank_name": "HDFC Bank", "account_name": "TechHind Pvt Ltd",
+        "account_no": "50200088765432", "ifsc": "HDFC0001207",
+        "branch": "SG Highway, Ahmedabad", "upi": "techhind@hdfcbank",
+        "opening_balance": 250000.0,
+        "opening_date": (t - timedelta(days=120)).isoformat(),
+        "primary": True, "is_active": True,
+        "created_by": "seed", "created_at": iso_now(),
+    }
+    bank_icici = {
+        "id": new_id(), "account_type": "bank",
+        "bank_name": "ICICI Bank", "account_name": "TechHind Pvt Ltd",
+        "account_no": "120405500998", "ifsc": "ICIC0001204",
+        "branch": "Prahladnagar, Ahmedabad", "upi": "",
+        "opening_balance": 75000.0,
+        "opening_date": (t - timedelta(days=120)).isoformat(),
+        "primary": False, "is_active": True,
+        "created_by": "seed", "created_at": iso_now(),
+    }
+    bank_cash = {
+        "id": new_id(), "account_type": "cash",
+        "bank_name": "Cash", "account_name": "TechHind Pvt Ltd",
+        "account_no": "", "ifsc": "", "branch": "", "upi": "",
+        "opening_balance": 15000.0,
+        "opening_date": (t - timedelta(days=120)).isoformat(),
+        "primary": False, "is_active": True,
+        "created_by": "seed", "created_at": iso_now(),
+    }
+    await db.bank_accounts.insert_many([bank_hdfc, bank_icici, bank_cash])
+    # Keep masters.banks in sync for expense picker legacy
+    await db.masters.update_one({"id": "masters"}, {"$set": {"banks": [
+        {"bank_name": b["bank_name"], "account_name": b["account_name"],
+         "account_no": b["account_no"], "ifsc": b["ifsc"], "branch": b["branch"],
+         "primary": b["primary"], "id": b["id"]}
+        for b in (bank_hdfc, bank_icici)
+    ]}})
 
     # Subscriptions
     def sub(cust_key, plan, status, start_off, renew_off, cycle=None, price=None):
@@ -325,13 +416,14 @@ async def seed_all(force: bool = False):
     await db.invoices.insert_many([dict(i) for i in invoices])
 
     # Payments
+    hdfc_id = bank_hdfc["id"]
     payments = [
-        _mk_payment(cmap["UrbanKart"], t - timedelta(days=38), i1["grand_total"], [(i1, i1["grand_total"])], "neft", "UTR88412209"),
-        _mk_payment(cmap["FinEdge"], t - timedelta(days=25), i2["amount_paid"], [(i2, i2["amount_paid"])], "rtgs", "RTGS221045"),
-        _mk_payment(cmap["CloudKirana"], t - timedelta(days=30), i3["grand_total"], [(i3, i3["grand_total"])], "upi", "UPI-9931442"),
-        _mk_payment(cmap["MediServe"], t - timedelta(days=62), i4["grand_total"], [(i4, i4["grand_total"])], "neft", "UTR77210034"),
-        _mk_payment(cmap["AgroLink"], t - timedelta(days=28), i6["grand_total"], [(i6, i6["grand_total"])], "neft", "UTR90012218"),
-        _mk_payment(cmap["FinEdge"], t - timedelta(days=4), 10000, [], "upi", "UPI-1188230"),
+        _mk_payment(cmap["UrbanKart"], t - timedelta(days=38), i1["grand_total"], [(i1, i1["grand_total"])], "neft", "UTR88412209", hdfc_id),
+        _mk_payment(cmap["FinEdge"], t - timedelta(days=25), i2["amount_paid"], [(i2, i2["amount_paid"])], "rtgs", "RTGS221045", hdfc_id),
+        _mk_payment(cmap["CloudKirana"], t - timedelta(days=30), i3["grand_total"], [(i3, i3["grand_total"])], "upi", "UPI-9931442", hdfc_id),
+        _mk_payment(cmap["MediServe"], t - timedelta(days=62), i4["grand_total"], [(i4, i4["grand_total"])], "neft", "UTR77210034", hdfc_id),
+        _mk_payment(cmap["AgroLink"], t - timedelta(days=28), i6["grand_total"], [(i6, i6["grand_total"])], "neft", "UTR90012218", hdfc_id),
+        _mk_payment(cmap["FinEdge"], t - timedelta(days=4), 10000, [], "upi", "UPI-1188230", hdfc_id),
     ]
     await db.payments.insert_many([dict(p) for p in payments])
 
@@ -375,24 +467,26 @@ async def seed_all(force: bool = False):
     vpay1 = {"id": new_id(), "payment_ref": _num("VP", t - timedelta(days=42)),
              "vendor_id": vendors[0]["id"], "vendor_name": vendors[0]["name"],
              "payment_date": (t - timedelta(days=42)).isoformat(), "amount": b1["grand_total"],
-             "method": "neft", "reference_no": "UTR55129011",
+             "method": "neft", "reference_no": "UTR55129011", "bank_id": hdfc_id,
              "allocations": [{"bill_id": b1["id"], "amount": b1["grand_total"], "bill_no": b1["bill_no"]}],
              "unallocated": 0.0, "notes": "", "created_by": "seed", "created_at": iso_now()}
     vpay2 = {"id": new_id(), "payment_ref": _num("VP", t - timedelta(days=30)),
              "vendor_id": vendors[2]["id"], "vendor_name": vendors[2]["name"],
              "payment_date": (t - timedelta(days=30)).isoformat(), "amount": b4["amount_paid"],
-             "method": "neft", "reference_no": "UTR55129877",
+             "method": "neft", "reference_no": "UTR55129877", "bank_id": hdfc_id,
              "allocations": [{"bill_id": b4["id"], "amount": b4["amount_paid"], "bill_no": b4["bill_no"]}],
              "unallocated": 0.0, "notes": "", "created_by": "seed", "created_at": iso_now()}
     await db.vendor_payments.insert_many([vpay1, vpay2])
 
     # Expense vouchers
-    def voucher(vdate_off, category, narration, amount, tax, status, vendor_name="", vtype="expense", paid_via="HDFC Bank"):
+    def voucher(vdate_off, category, narration, amount, tax, status, vendor_name="", vtype="expense",
+                paid_via="HDFC Bank", bank_id=None):
         d = t + timedelta(days=vdate_off)
         tax_amt = r2(amount * tax / 100)
         v = {"id": new_id(), "voucher_no": None, "voucher_date": d.isoformat(), "category": category,
              "narration": narration, "amount": amount, "tax_rate": tax, "tax_amount": tax_amt,
              "total": r2(amount + tax_amt), "vendor_name": vendor_name, "paid_via": paid_via,
+             "bank_id": bank_id or hdfc_id,
              "type": vtype, "status": status, "attachments": [], "created_by": "seed",
              "created_at": iso_now()}
         if status == "posted":
@@ -445,7 +539,7 @@ async def seed_all(force: bool = False):
     # TDS payment sample (allocated with tds_amount credit)
     tds_pay = _mk_payment(
         cmap["BrightHire"], t - timedelta(days=10), r2(i5["grand_total"] * 0.9),
-        [(i5, r2(i5["grand_total"] * 0.9))], "neft", "UTR-TDS-9011",
+        [(i5, r2(i5["grand_total"] * 0.9))], "neft", "UTR-TDS-9011", hdfc_id,
     )
     tds_pay["tds_amount"] = r2(i5["grand_total"] * 0.1)
     tds_pay["unallocated"] = 0.0
@@ -456,11 +550,22 @@ async def seed_all(force: bool = False):
         "amount_paid": i5["amount_paid"], "balance": 0.0, "status": "paid",
     }})
     await db.payments.insert_one(tds_pay)
+    payments.append(tds_pay)
+
+    # Bank ledger lines for seeded money movements
+    import bank_ledger as bl
+    for p in payments:
+        await bl.post_payment_receipt(p)
+    for vp in (vpay1, vpay2):
+        await bl.post_vendor_payment(vp)
+    for v in vouchers:
+        if v["status"] == "posted":
+            await bl.post_expense_voucher(v)
 
     await db.audit_logs.insert_one({"id": new_id(), "ts": iso_now(), "user_id": "seed",
                                     "user_name": "System", "role": "admin", "action": "seeded",
                                     "entity_type": "system", "entity_id": "seed",
-                                    "summary": "Demo dataset seeded (customers, catalog, subscriptions, invoices, payments, bills, vouchers, periods, DN, TDS)",
+                                    "summary": "Demo dataset seeded (customers, catalog, subscriptions, invoices, payments, bills, vouchers, periods, DN, TDS, bank ledger)",
                                     "diff": {}})
     await seed_rbac()
 

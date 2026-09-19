@@ -73,11 +73,13 @@ from routers import imports as imports_router
 from routers import tickets as tickets_router
 from routers import rbac as rbac_router
 from routers import work as work_router
+from routers import banks as banks_router
 
 app.include_router(auth_router.router)
 app.include_router(settings_router.router)
 app.include_router(catalog_router.router)
 app.include_router(billing_router.router)
+app.include_router(banks_router.router)
 app.include_router(payables_router.router)
 app.include_router(dashboard_router.router)
 app.include_router(periods_router.router)

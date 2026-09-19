@@ -12,6 +12,8 @@ Distilled from `docs/PROD-READINESS-SIGN-OFF.md`, `docs/E2E-SIGN-OFF.md`, and `t
 | GST invoices / payments | INV-01 … INV-10 (+06b), INV-DN-01, INV-TDS-01, INV-CONCUR-01, INV-PAY-DEL-01 | GST, PDF, CN/DN, TDS, concurrency, payment reverse |
 | Audit / activity | AUD-01, AUD-ACT-01 | Actor+IP+ts on audits; entity activity diffs |
 | Payables / vouchers | PAY-01 … PAY-05 | Vendor bill ITC, vendor payment, expense |
+| Bank ledger | BANK-01 … BANK-11 | Accounts+balance; receipt post/reverse; vendor pay; voucher approve; period lock; statement CSV; transfer; cash book; link; viewer 403 |
+| Prod cutover | CUTOVER-01 … CUTOVER-05 | Bootstrap 1 admin; bank CSV 28 lines → live ₹209174.04; parties/subs; expenses/TDS; no UrbanKart / no double bank post |
 | Dashboard / aging | DASH-01 … DASH-04 | KPIs, AR/AP aging |
 | Import / reports / period | OPS-01 … OPS-06, OPS-PERIOD-DATE, OPS-IMPORT-PAY-01 | CSV, pack, GSTR, period lock, payment import txn |
 | Support tickets | SUP-01 … SUP-04, SUP-10 … SUP-16 | Manual create/reply/status; bridge key; internal notes stripped; support_agent write; assignee/mine/SLA; email mock; Solar status filter + file download |
@@ -21,7 +23,7 @@ Distilled from `docs/PROD-READINESS-SIGN-OFF.md`, `docs/E2E-SIGN-OFF.md`, and `t
 
 ## Browser routes (16+)
 
-login, dashboard, subscriptions, invoices, invoice detail (+ Activity panel), expenses, settings, imports, accountant-pack, period-close, aging, customers, products, vendors, payments, audit (admin/accountant only), **support tickets** (`/tickets`), **projects / tasks (list|kanban|deadline) / task detail / work-report / roles**.
+login, dashboard, subscriptions, invoices, invoice detail (+ Activity panel), expenses, **bank ledger** (`/banks`), settings, imports, accountant-pack, period-close, aging, customers, products, vendors, payments, audit (admin/accountant only), **support tickets** (`/tickets`), **projects / tasks (list|kanban|deadline) / task detail / work-report / roles**.
 
 Default web for local QA when `:3000` is busy: `WEB_BASE=http://localhost:3011`.
 

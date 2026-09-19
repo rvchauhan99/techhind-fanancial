@@ -88,11 +88,12 @@ export default function Dashboard() {
       )}
 
       {kpis && (
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3" data-testid="kpi-grid">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-3" data-testid="kpi-grid">
         <Kpi tid="kpi-mrr-card" title="SaaS MRR" value={fmtINR(kpis.mrr)} sub={`ARR ${fmtINR(kpis.arr)}`} icon={Repeat} />
         <Kpi tid="kpi-billed-card" title="Net Billed (Month)" value={fmtINR(kpis.billed_month)} sub="Approved invoices less CN" icon={TrendingUp} />
         <Kpi tid="kpi-collected-card" title="Collected (Month)" value={fmtINR(kpis.collected_month)} sub="Receipts this month" icon={ReceiptIndianRupee} tone="text-emerald-700" />
         <Kpi tid="kpi-outstanding-card" title="AR Outstanding" value={fmtINR(kpis.outstanding)} sub="Open invoice balances" icon={AlertTriangle} tone="text-amber-700" />
+        <Kpi tid="kpi-cash-bank-card" title="Cash + Bank" value={fmtINR(kpis.cash_bank_position || 0)} sub={<Link to="/banks" className="text-[#0066CC]">Bank ledger →</Link>} icon={Landmark} tone="text-emerald-700" />
         <Kpi tid="kpi-gst-card" title="Net GST Liability" value={fmtINR(kpis.gst_liability)} sub={`Output ${fmtINR(kpis.output_tax_month)} − ITC ${fmtINR(kpis.itc_month)}`} icon={Percent} />
         <Kpi tid="kpi-subs-card" title="Active Subscriptions" value={kpis.active_subscriptions} sub={`FY ${data.fy}`} icon={Landmark} />
       </div>

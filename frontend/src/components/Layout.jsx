@@ -4,7 +4,7 @@ import {
   LayoutDashboard, FileText, ReceiptIndianRupee, Building2, Repeat, Package,
   Briefcase, Wallet, CalendarClock, ShieldCheck, Settings, LogOut, ClockAlert,
   Layers3, Lock, FolderArchive, Upload, LifeBuoy, FolderKanban, ListTodo,
-  BarChart3, Users, Circle,
+  BarChart3, Users, Circle, Landmark,
 } from "lucide-react"
 import api from "../lib/api"
 import { fmtINR } from "../lib/format"
@@ -31,6 +31,7 @@ const ICON_MAP = {
   BarChart3,
   Users,
   Circle,
+  Landmark,
 }
 
 const FALLBACK_NAV = [
@@ -53,6 +54,7 @@ const FALLBACK_NAV = [
     items: [
       { name: "Vendors & Bills", icon: Briefcase, path: "/vendors", tid: "nav-vendors", key: "vendors" },
       { name: "Expense Vouchers", icon: Wallet, path: "/expenses", tid: "nav-expenses", key: "expenses" },
+      { name: "Bank Ledger", icon: Landmark, path: "/banks", tid: "nav-banks", key: "banks" },
       { name: "AR / AP Aging", icon: CalendarClock, path: "/aging", tid: "nav-aging", key: "aging" },
     ],
   },

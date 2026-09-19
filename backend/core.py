@@ -13,9 +13,14 @@ from datetime import datetime, timezone, timedelta, date
 from fastapi import HTTPException, Request
 from motor.motor_asyncio import AsyncIOMotorClient
 
-mongo_url = os.environ["MONGO_URL"]
+mongo_url = os.environ.get("MONGO_URL") or os.environ.get("MONGO_URI")
+if not mongo_url:
+    raise RuntimeError("Set MONGO_URL or MONGO_URI")
+_db_name = os.environ.get("DB_NAME") or os.environ.get("MONGO_DATABASE")
+if not _db_name:
+    raise RuntimeError("Set DB_NAME or MONGO_DATABASE")
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ["DB_NAME"]]
+db = client[_db_name]
 
 JWT_ALGORITHM = "HS256"
 ROLES = ["admin", "accountant", "ops", "viewer"]  # legacy finance roles; org_roles is source of truth

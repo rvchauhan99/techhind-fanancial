@@ -20,14 +20,27 @@ export default function Payments() {
   const [open, setOpen] = useState(false);
   const [openInvoices, setOpenInvoices] = useState([]);
   const [form, setForm] = useState({ customer_id: "", payment_date: new Date().toISOString().slice(0, 10),
-    amount: "", tds_amount: "", method: "upi", reference_no: "", notes: "" });
+    amount: "", tds_amount: "", method: "upi", reference_no: "", notes: "", bank_id: "" });
   const [allocs, setAllocs] = useState({});
+  const [banks, setBanks] = useState([]);
 
   const load = () => api.get("/payments").then((r) => setRows(r.data)).catch(() => {});
   useEffect(() => {
     load();
     api.get("/customers").then((r) => setCustomers(r.data)).catch(() => {});
+    api.get("/banks").then((r) => {
+      setBanks(r.data || []);
+      const primary = (r.data || []).find((b) => b.primary) || (r.data || []).find((b) => b.account_type === "bank");
+      if (primary) setForm((f) => ({ ...f, bank_id: f.bank_id || primary.id }));
+    }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (form.method === "cash") {
+      const cash = banks.find((b) => b.account_type === "cash");
+      if (cash) setForm((f) => ({ ...f, bank_id: cash.id }));
+    }
+  }, [form.method, banks]);
 
   useEffect(() => {
     if (form.customer_id) {
@@ -48,7 +61,8 @@ export default function Payments() {
       });
       toast.success("Payment recorded & receipt numbered");
       setOpen(false);
-      setForm({ customer_id: "", payment_date: new Date().toISOString().slice(0, 10), amount: "", tds_amount: "", method: "upi", reference_no: "", notes: "" });
+      const primary = banks.find((b) => b.primary) || banks.find((b) => b.account_type === "bank");
+      setForm({ customer_id: "", payment_date: new Date().toISOString().slice(0, 10), amount: "", tds_amount: "", method: "upi", reference_no: "", notes: "", bank_id: primary?.id || "" });
       setAllocs({});
       load();
     } catch (err) {
@@ -128,6 +142,14 @@ export default function Payments() {
                   <SelectTrigger data-testid="payment-method-select"><SelectValue /></SelectTrigger>
                   <SelectContent className="bg-white">{Object.entries(METHODS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
                 </Select></div>
+              <div><Label>Bank / Cash *</Label>
+                <Select value={form.bank_id} onValueChange={(v) => setForm({ ...form, bank_id: v })}
+                  disabled={form.method === "cash"}>
+                  <SelectTrigger data-testid="payment-bank-select"><SelectValue placeholder="Select account" /></SelectTrigger>
+                  <SelectContent className="bg-white">
+                    {banks.map((b) => <SelectItem key={b.id} value={b.id}>{b.label || b.bank_name}</SelectItem>)}
+                  </SelectContent>
+                </Select></div>
               <div><Label>Reference (UTR/UPI/cheque no)</Label>
                 <Input data-testid="payment-ref-input" value={form.reference_no} onChange={(e) => setForm({ ...form, reference_no: e.target.value })} className="font-mono" /></div>
             </div>
@@ -154,7 +176,7 @@ export default function Payments() {
             <div className="flex items-center justify-between text-sm pt-1">
               <span className={totalAlloc > Number(form.amount || 0) + Number(form.tds_amount || 0) ? "text-red-600 font-semibold" : "text-slate-600"} data-testid="alloc-summary">
                 Allocated {fmtINR(totalAlloc)} of {fmtINR(Number(form.amount || 0) + Number(form.tds_amount || 0))} (incl. TDS {fmtINR(form.tds_amount || 0)}) · Unallocated {fmtINR(Math.max(Number(form.amount || 0) + Number(form.tds_amount || 0) - totalAlloc, 0))}</span>
-              <Button data-testid="payment-save-btn" type="submit" disabled={!form.customer_id || !form.amount || totalAlloc > Number(form.amount || 0) + Number(form.tds_amount || 0)}
+              <Button data-testid="payment-save-btn" type="submit" disabled={!form.customer_id || !form.amount || !form.bank_id || totalAlloc > Number(form.amount || 0) + Number(form.tds_amount || 0)}
                 className="bg-[#0F284E] hover:bg-[#17386D] text-white">Record Payment</Button>
             </div>
           </form>

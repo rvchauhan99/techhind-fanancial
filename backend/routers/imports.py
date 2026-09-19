@@ -20,9 +20,9 @@ TEMPLATES = {
     "vendors": "name,gstin,state,state_code,address,contact_name,contact_email,contact_phone\nPrintZone,24AAACP5544K1Z2,Gujarat,24,\"Ashram Road, Ahmedabad\",Kunal,kunal@printzone.in,+91 97000 22222",
     "products": "name,type,hsn_sac,tax_rate,price,billing_cycle,unit,description\nSupport Retainer,service,998313,18,15000,monthly,Nos,Monthly support retainer",
     "subscriptions": "customer_name,plan_name,price,billing_cycle,start_on,next_renewal_on,status\nAcme Traders Pvt Ltd,TH Cloud — Growth,12999,monthly,2026-04-01,2026-10-01,active",
-    "expenses": "voucher_date,category,narration,amount,tax_rate,vendor_name\n2026-08-15,Travel,Client visit Mumbai,12450,0,",
+    "expenses": "voucher_date,category,narration,amount,tax_rate,vendor_name,paid_via,bank_account_no\n2026-08-15,Travel,Client visit Mumbai,12450,0,,HDFC Bank,50200088765432",
     "invoices": "customer_name,invoice_date,due_date,description,hsn_sac,qty,rate,discount,tax_rate,legacy_no\nAcme Traders Pvt Ltd,2026-08-05,2026-08-20,TH Cloud — Growth (Aug 2026),998314,1,12999,0,18,",
-    "payments": "customer_name,payment_date,amount,method,reference_no,invoice_no,tds_amount\nAcme Traders Pvt Ltd,2026-08-10,13838.82,upi,UPI-12345,TH/2026-27/0010,0",
+    "payments": "customer_name,payment_date,amount,method,reference_no,invoice_no,tds_amount,bank_account_no\nAcme Traders Pvt Ltd,2026-08-10,13838.82,upi,UPI-12345,TH/2026-27/0010,0,50200088765432",
     "opening_balances": "customer_name,amount,as_on_date\nAcme Traders Pvt Ltd,25000,2026-04-01",
 }
 
@@ -64,6 +64,30 @@ def _d(row, key):
 async def _customer(name):
     return await db.customers.find_one(
         {"legal_name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}}, {"_id": 0})
+
+
+async def _resolve_bank_id(row: dict, method: str = "neft") -> str:
+    """Resolve bank from bank_account_no, bank_id, or paid_via / method=cash."""
+    if (method or "").lower() == "cash":
+        cash = await db.bank_accounts.find_one({"account_type": "cash"}, {"_id": 0, "id": 1})
+        return (cash or {}).get("id") or ""
+    if row.get("bank_id"):
+        return row["bank_id"]
+    acct_no = (row.get("bank_account_no") or "").strip()
+    if acct_no:
+        acct = await db.bank_accounts.find_one({"account_no": acct_no}, {"_id": 0, "id": 1})
+        if not acct:
+            raise ValueError(f"bank account_no '{acct_no}' not found")
+        return acct["id"]
+    paid_via = (row.get("paid_via") or "").strip()
+    if paid_via:
+        acct = await db.bank_accounts.find_one({"bank_name": paid_via}, {"_id": 0, "id": 1})
+        if acct:
+            return acct["id"]
+    primary = await db.bank_accounts.find_one(
+        {"account_type": "bank", "primary": True}, {"_id": 0, "id": 1}
+    )
+    return (primary or {}).get("id") or ""
 
 
 async def _validate(entity: str, row: dict):
@@ -115,10 +139,12 @@ async def _validate(entity: str, row: dict):
         amount = _f(row, "amount")
         tax = _f(row, "tax_rate", 0)
         tax_amt = r2(amount * tax / 100)
+        bank_id = await _resolve_bank_id(row)
         return {"voucher_date": _d(row, "voucher_date"), "category": row["category"],
                 "narration": row["narration"], "amount": amount, "tax_rate": tax,
                 "tax_amount": tax_amt, "total": r2(amount + tax_amt),
                 "vendor_name": row.get("vendor_name", ""), "paid_via": row.get("paid_via", ""),
+                "bank_id": bank_id,
                 "type": "expense", "status": "posted", "attachments": []}
     if entity in ("invoices", "opening_balances"):
         cust = await _customer(row.get("customer_name", ""))
@@ -148,9 +174,12 @@ async def _validate(entity: str, row: dict):
             inv = await db.invoices.find_one({"invoice_no": row["invoice_no"]}, {"_id": 0})
             if not inv:
                 raise ValueError(f"invoice '{row['invoice_no']}' not found")
+        method = row.get("method", "neft")
+        bank_id = await _resolve_bank_id(row, method)
         return {"_customer": cust, "_invoice": inv, "payment_date": _d(row, "payment_date"),
-                "amount": amount, "method": row.get("method", "neft"),
-                "reference_no": row.get("reference_no", ""), "tds_amount": _f(row, "tds_amount", 0)}
+                "amount": amount, "method": method,
+                "reference_no": row.get("reference_no", ""), "tds_amount": _f(row, "tds_amount", 0),
+                "bank_id": bank_id}
     raise ValueError("unknown entity")
 
 
@@ -168,10 +197,13 @@ async def _commit(entity: str, doc: dict, user: dict):
         doc.update({"id": new_id(), "created_at": iso_now(), "created_by": user["id"]})
         await db.subscriptions.insert_one(doc)
     elif entity == "expenses":
+        await assert_period_open(doc["voucher_date"], user)
         number = await next_number("EV", date.fromisoformat(doc["voucher_date"]))
         doc.update({"id": new_id(), "voucher_no": number, "approved_by": user["id"],
                     "approved_at": iso_now(), "created_by": user["id"], "created_at": iso_now()})
         await db.expense_vouchers.insert_one(doc)
+        import bank_ledger as bl
+        await bl.post_expense_voucher(doc)
     elif entity in ("invoices", "opening_balances"):
         company = await get_company()
         cust = doc.pop("_customer")
@@ -228,10 +260,13 @@ async def _commit(entity: str, doc: dict, user: dict):
             pay = {"id": new_id(), "receipt_no": receipt_no, "customer_id": cust["id"],
                    "customer_name": cust.get("legal_name"), "payment_date": doc["payment_date"],
                    "amount": doc["amount"], "tds_amount": doc["tds_amount"], "method": doc["method"],
-                   "reference_no": doc["reference_no"], "allocations": alloc_docs,
+                   "reference_no": doc["reference_no"], "bank_id": doc.get("bank_id") or "",
+                   "allocations": alloc_docs,
                    "unallocated": r2(doc["amount"] + doc["tds_amount"] - alloc_amount),
                    "notes": "Imported via CSV", "created_by": user["id"], "created_at": iso_now()}
             await db.payments.insert_one(pay, **opts)
+            import bank_ledger as bl
+            await bl.post_payment_receipt(pay, session=session)
             return pay
 
         await run_in_transaction(_do)

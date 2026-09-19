@@ -2,7 +2,7 @@
 
 **TechHind Company Finance (TCF)** — standalone single-company GST finance app (INR, FY Apr–Mar, series `TH/{FY}/{SEQ}`).
 
-**Last synced:** 2026-09-18 — Support Module Pro (assignee/queue/category/SLA/internal notes/`can_ticket_write` + Solar bridge file download/filters); Task Pro + Org RBAC + Critical C1–C9 still in force.
+**Last synced:** 2026-09-19 — Production cutover pack (`scripts/prod_bootstrap`, `scripts/cutover_import`; `seed_all` QA-only; HDFC statement → ledger ₹2,09,174.04). Prior: Bank ledger BANK-01…11; Support Module Pro + Task Pro + Org RBAC.
 
 ## Not Solar CRM
 

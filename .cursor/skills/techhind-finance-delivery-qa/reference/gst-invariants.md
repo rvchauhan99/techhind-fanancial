@@ -26,6 +26,14 @@ Money / GST / period / RBAC changes require **Critical** verification.
 - Optional TDS amount credits allocation
 - Receipt PDF + receipt numbering
 - Payment may advance subscription `next_renewal_on`
+- Bank cash amount (not TDS) posts a **deposit** to `bank_ledger`; delete reverses the ledger line
+
+## Bank ledger
+
+- Live balance = opening + credits − debits (computed)
+- Vendor payments and posted expense vouchers post **withdrawals**
+- `method=cash` posts to the Cash account
+- Period lock applies to ledger post / reverse / import / manual / transfer
 
 ## Credit / debit notes
 

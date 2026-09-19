@@ -19,9 +19,10 @@ Standalone single-company finance for TechHind Pvt Ltd. INR only. FY 1 Apr – 3
 2. **GST billing** — draft invoice → approve (locks + assigns `TH/{FY}/{SEQ}`) → PDF → email → payment allocation (+ optional TDS) → AR aging
 3. **Adjustments** — credit note / debit note; CN reduces invoice balance
 4. **Payables** — vendor → purchase bill (+ ITC) → vendor payment
-5. **Expenses** — voucher submit → approve → post (+ attachments)
-6. **Period close** — `open` → `in_review` → `gst_filed` → `closed` (mutations locked when closed; Admin can reopen)
-7. **Ops** — CSV import (dry-run), Accountant Pack ZIP, GSTR-1 / GSTR-3B JSON export
+5. **Expenses** — voucher submit → approve → post (+ attachments); posted vouchers withdraw from bank ledger
+6. **Bank ledger** — per-account statement (running balance); auto-post from receipts / vendor payments / posted vouchers; Cash book; manual lines; inter-bank transfer; go-live statement CSV import (Date/Narration/Chq/ValueDt/Withdrawal/Deposit/Closing) with optional link to CRM docs
+7. **Period close** — `open` → `in_review` → `gst_filed` → `closed` (mutations locked when closed; Admin can reopen)
+8. **Ops** — CSV import (dry-run), Accountant Pack ZIP, GSTR-1 / GSTR-3B JSON export
 
 ## Current integrations (local truth)
 

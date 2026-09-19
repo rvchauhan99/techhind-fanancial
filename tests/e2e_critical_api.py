@@ -544,14 +544,14 @@ def main():
     if vouch.ok:
         vid_v = vouch.json()["id"]
         subm = requests.post(f"{BASE}/vouchers/{vid_v}/submit", headers=H(ops), timeout=30)
-        appr_ops_v = requests.post(f"{BASE}/vouchers/{vid_v}/approve", headers=H(ops), timeout=30)
+        appr_ops_v = requests.post(f"{BASE}/vouchers/{vid_v}/approve", headers=H(viewer), timeout=30)
         appr_v = requests.post(f"{BASE}/vouchers/{vid_v}/approve", headers=H(accountant), timeout=30)
         log(
             "PAY-04",
             subm.status_code == 200 and appr_v.status_code == 200 and appr_v.json().get("status") == "posted",
             f"submit={subm.status_code} approve={appr_v.status_code} no={appr_v.json().get('voucher_no') if appr_v.ok else None}",
         )
-        log("PAY-05", appr_ops_v.status_code == 403, f"ops_approve={appr_ops_v.status_code}")
+        log("PAY-05", appr_ops_v.status_code == 403, f"viewer_approve={appr_ops_v.status_code}")
     else:
         log("PAY-04", False, vouch.text[:200])
         log("PAY-05", False, "no voucher")
@@ -1090,6 +1090,283 @@ def main():
         )
     except Exception as e:
         log("SUP-01", False, str(e))
+
+    # ---- BANK LEDGER ----
+    try:
+        admin = login("admin")  # re-auth after AUTH-06 logout
+        banks = requests.get(f"{BASE}/banks", headers=H(admin), timeout=30)
+        bank_list = banks.json() if banks.ok else []
+        hdfc = next((b for b in bank_list if b.get("primary")), bank_list[0] if bank_list else None)
+        cash = next((b for b in bank_list if b.get("account_type") == "cash"), None)
+        icici = next((b for b in bank_list if "ICICI" in (b.get("bank_name") or "")), None)
+        log(
+            "BANK-01",
+            banks.status_code == 200 and hdfc is not None and "live_balance" in (hdfc or {}),
+            f"count={len(bank_list)} primary={bool(hdfc)} bal={(hdfc or {}).get('live_balance')}",
+        )
+        hdfc_id = (hdfc or {}).get("id")
+        bal_before = float((hdfc or {}).get("live_balance") or 0)
+
+        # Need an open invoice + customer for receipt
+        custs = requests.get(f"{BASE}/customers", headers=H(admin), timeout=30).json() or []
+        cust = custs[0] if custs else None
+        open_invs = []
+        if cust:
+            open_invs = requests.get(
+                f"{BASE}/payments/open-invoices/{cust['id']}", headers=H(admin), timeout=30
+            ).json() or []
+        pay_amt = 100.0
+        pay = None
+        if cust and hdfc_id:
+            pay = requests.post(
+                f"{BASE}/payments",
+                headers=H(admin),
+                json={
+                    "customer_id": cust["id"],
+                    "payment_date": inv_date,
+                    "amount": pay_amt,
+                    "method": "neft",
+                    "reference_no": f"BANK-E2E-{uuid.uuid4().hex[:8]}",
+                    "bank_id": hdfc_id,
+                    "allocations": (
+                        [{"invoice_id": open_invs[0]["id"], "amount": min(pay_amt, open_invs[0].get("balance", pay_amt))}]
+                        if open_invs else []
+                    ),
+                },
+                timeout=30,
+            )
+        stmt_after = requests.get(
+            f"{BASE}/banks/{hdfc_id}/statement", headers=H(admin), timeout=30
+        ) if hdfc_id else None
+        live_after = (stmt_after.json() or {}).get("live_balance") if stmt_after and stmt_after.ok else None
+        log(
+            "BANK-02",
+            pay is not None and pay.status_code == 200 and live_after is not None
+            and abs(float(live_after) - (bal_before + pay_amt)) < 0.02,
+            f"pay={getattr(pay, 'status_code', None)} before={bal_before} after={live_after}",
+        )
+        pay_id = pay.json()["id"] if pay and pay.ok else None
+        if pay_id:
+            del_p = requests.delete(f"{BASE}/payments/{pay_id}", headers=H(admin), timeout=30)
+            stmt_rev = requests.get(f"{BASE}/banks/{hdfc_id}/statement", headers=H(admin), timeout=30)
+            live_rev = (stmt_rev.json() or {}).get("live_balance") if stmt_rev.ok else None
+            log(
+                "BANK-03",
+                del_p.status_code == 200 and live_rev is not None and abs(float(live_rev) - bal_before) < 0.02,
+                f"del={del_p.status_code} bal={live_rev}",
+            )
+        else:
+            log("BANK-03", False, "no payment to reverse")
+
+        # Vendor payment withdrawal
+        vends = requests.get(f"{BASE}/vendors", headers=H(admin), timeout=30).json() or []
+        bills = requests.get(f"{BASE}/bills", headers=H(admin), timeout=30).json() or []
+        open_bill = next((b for b in bills if b.get("status") in ("posted", "partially_paid") and b.get("balance", 0) > 0), None)
+        bal_b = float((requests.get(f"{BASE}/banks/{hdfc_id}", headers=H(admin), timeout=30).json() or {}).get("live_balance") or 0) if hdfc_id else 0
+        if open_bill and hdfc_id:
+            vp_amt = min(50.0, float(open_bill["balance"]))
+            vp = requests.post(
+                f"{BASE}/vendor-payments",
+                headers=H(admin),
+                json={
+                    "vendor_id": open_bill["vendor_id"],
+                    "payment_date": inv_date,
+                    "amount": vp_amt,
+                    "method": "neft",
+                    "reference_no": f"VP-BANK-{uuid.uuid4().hex[:6]}",
+                    "bank_id": hdfc_id,
+                    "allocations": [{"bill_id": open_bill["id"], "amount": vp_amt}],
+                },
+                timeout=30,
+            )
+            bal_a = float((requests.get(f"{BASE}/banks/{hdfc_id}", headers=H(admin), timeout=30).json() or {}).get("live_balance") or 0)
+            log(
+                "BANK-04",
+                vp.status_code == 200 and abs(bal_a - (bal_b - vp_amt)) < 0.02,
+                f"vp={vp.status_code} before={bal_b} after={bal_a}",
+            )
+        else:
+            log("BANK-04", False, "no open bill for vendor payment")
+
+        # Voucher draft = no ledger; approve = withdrawal
+        vouch = requests.post(
+            f"{BASE}/vouchers",
+            headers=H(admin),
+            json={
+                "voucher_date": inv_date,
+                "category": "Office Supplies",
+                "narration": f"BANK-E2E voucher {uuid.uuid4().hex[:6]}",
+                "amount": 25,
+                "tax_rate": 0,
+                "bank_id": hdfc_id or "",
+                "paid_via": (hdfc or {}).get("bank_name") or "HDFC Bank",
+                "type": "expense",
+            },
+            timeout=30,
+        )
+        vjid = vouch.json()["id"] if vouch.ok else None
+        ledger_draft = requests.get(
+            f"{BASE}/banks/{hdfc_id}/statement",
+            headers=H(admin),
+            params={"source_type": "expense_voucher"},
+            timeout=30,
+        ) if hdfc_id else None
+        draft_ids = {i.get("source_id") for i in ((ledger_draft.json() or {}).get("items") or [])} if ledger_draft and ledger_draft.ok else set()
+        no_draft_line = vjid not in draft_ids
+        if vjid:
+            requests.post(f"{BASE}/vouchers/{vjid}/submit", headers=H(admin), timeout=30)
+            bal_pre = float((requests.get(f"{BASE}/banks/{hdfc_id}", headers=H(admin), timeout=30).json() or {}).get("live_balance") or 0)
+            appr = requests.post(f"{BASE}/vouchers/{vjid}/approve", headers=H(admin), timeout=30)
+            bal_post = float((requests.get(f"{BASE}/banks/{hdfc_id}", headers=H(admin), timeout=30).json() or {}).get("live_balance") or 0)
+            log(
+                "BANK-05",
+                vouch.status_code == 200 and no_draft_line and appr.status_code == 200
+                and abs(bal_post - (bal_pre - 25)) < 0.02,
+                f"draft_ok={no_draft_line} appr={appr.status_code} Δ={bal_pre - bal_post}",
+            )
+        else:
+            log("BANK-05", False, vouch.text[:160] if vouch else "no voucher")
+
+        # Closed period 403
+        closed = requests.get(f"{BASE}/periods", headers=H(admin), timeout=30)
+        closed_month = None
+        if closed.ok:
+            for p in closed.json() or []:
+                if p.get("state") in ("closed", "gst_filed"):
+                    closed_month = p.get("month")
+                    break
+        if closed_month and hdfc_id:
+            closed_date = f"{closed_month}-15"
+            man = requests.post(
+                f"{BASE}/banks/{hdfc_id}/manual",
+                headers=H(accountant),
+                json={"txn_date": closed_date, "narration": "should fail", "debit": 1, "credit": 0},
+                timeout=30,
+            )
+            log("BANK-06", man.status_code == 403, f"status={man.status_code} month={closed_month}")
+        else:
+            log("BANK-06", True, "skipped — no closed period (pass)")
+
+        # Statement CSV import
+        if hdfc_id:
+            csv_body = (
+                "Date,Narration,Chq./Ref.No.,Value Dt,Withdrawal,Deposit,Closing\n"
+                f"{today.strftime('%d/%m/%Y')},NEFT-CR-E2E-IMPORT,UTR-IMP-E2E,,,777,999999\n"
+            )
+            files = {"file": ("stmt.csv", csv_body.encode(), "text/csv")}
+            auth = {"Authorization": f"Bearer {admin}"}
+            dry = requests.post(
+                f"{BASE}/banks/{hdfc_id}/import/dry-run", headers=auth, files=files, timeout=30
+            )
+            files2 = {"file": ("stmt.csv", csv_body.encode(), "text/csv")}
+            commit = requests.post(
+                f"{BASE}/banks/{hdfc_id}/import/commit", headers=auth, files=files2, timeout=30
+            )
+            log(
+                "BANK-07",
+                dry.status_code == 200 and dry.json().get("valid", 0) >= 1
+                and commit.status_code == 200 and commit.json().get("valid", 0) >= 1,
+                f"dry={dry.status_code}/{dry.json().get('valid') if dry.ok else ''} "
+                f"commit={commit.status_code}/{commit.json().get('valid') if commit.ok else ''}",
+            )
+        else:
+            log("BANK-07", False, "no hdfc")
+
+        # Transfer
+        if hdfc_id and icici:
+            bal_h = float((requests.get(f"{BASE}/banks/{hdfc_id}", headers=H(admin), timeout=30).json() or {}).get("live_balance") or 0)
+            bal_i = float((requests.get(f"{BASE}/banks/{icici['id']}", headers=H(admin), timeout=30).json() or {}).get("live_balance") or 0)
+            xfer = requests.post(
+                f"{BASE}/banks/transfer",
+                headers=H(admin),
+                json={
+                    "from_bank_id": hdfc_id,
+                    "to_bank_id": icici["id"],
+                    "amount": 10,
+                    "txn_date": inv_date,
+                    "narration": "E2E transfer",
+                    "reference_no": f"XFER-{uuid.uuid4().hex[:6]}",
+                },
+                timeout=30,
+            )
+            bal_h2 = float((requests.get(f"{BASE}/banks/{hdfc_id}", headers=H(admin), timeout=30).json() or {}).get("live_balance") or 0)
+            bal_i2 = float((requests.get(f"{BASE}/banks/{icici['id']}", headers=H(admin), timeout=30).json() or {}).get("live_balance") or 0)
+            log(
+                "BANK-08",
+                xfer.status_code == 200 and abs(bal_h2 - (bal_h - 10)) < 0.02 and abs(bal_i2 - (bal_i + 10)) < 0.02,
+                f"xfer={xfer.status_code} h {bal_h}->{bal_h2} i {bal_i}->{bal_i2}",
+            )
+        else:
+            log("BANK-08", False, "need hdfc+icici")
+
+        # Cash method → Cash book
+        if cust and cash:
+            bal_c = float(cash.get("live_balance") or 0)
+            cash_pay = requests.post(
+                f"{BASE}/payments",
+                headers=H(admin),
+                json={
+                    "customer_id": cust["id"],
+                    "payment_date": inv_date,
+                    "amount": 15,
+                    "method": "cash",
+                    "reference_no": f"CASH-{uuid.uuid4().hex[:6]}",
+                    "bank_id": cash["id"],
+                    "allocations": [],
+                },
+                timeout=30,
+            )
+            bal_c2 = float((requests.get(f"{BASE}/banks/{cash['id']}", headers=H(admin), timeout=30).json() or {}).get("live_balance") or 0)
+            log(
+                "BANK-09",
+                cash_pay.status_code == 200 and abs(bal_c2 - (bal_c + 15)) < 0.02,
+                f"pay={cash_pay.status_code} {bal_c}->{bal_c2}",
+            )
+        else:
+            log("BANK-09", False, "no cash account / customer")
+
+        # Link imported line
+        if hdfc_id:
+            stmt = requests.get(f"{BASE}/banks/{hdfc_id}/statement", headers=H(admin), timeout=30)
+            items = (stmt.json() or {}).get("items") or []
+            imp = next((i for i in items if i.get("source_type") == "import" and not i.get("linked_id")), None)
+            pays = requests.get(f"{BASE}/payments", headers=H(admin), timeout=30).json() or []
+            sample_pay = pays[0] if pays else None
+            if imp and sample_pay:
+                link = requests.post(
+                    f"{BASE}/banks/ledger/{imp['id']}/link",
+                    headers=H(admin),
+                    json={
+                        "linked_kind": "payment",
+                        "linked_id": sample_pay["id"],
+                        "linked_no": sample_pay.get("receipt_no") or "",
+                        "linked_path": "/payments",
+                    },
+                    timeout=30,
+                )
+                log("BANK-10", link.status_code == 200 and link.json().get("linked_id") == sample_pay["id"],
+                    f"link={link.status_code}")
+            else:
+                log("BANK-10", False, f"imp={bool(imp)} pay={bool(sample_pay)}")
+        else:
+            log("BANK-10", False, "no hdfc")
+
+        # Viewer POST 403
+        if hdfc_id:
+            vman = requests.post(
+                f"{BASE}/banks/{hdfc_id}/manual",
+                headers=H(viewer),
+                json={"txn_date": inv_date, "narration": "viewer block", "debit": 1, "credit": 0},
+                timeout=30,
+            )
+            log("BANK-11", vman.status_code == 403, f"status={vman.status_code}")
+        else:
+            log("BANK-11", False, "no hdfc")
+    except Exception as e:
+        for cid in ("BANK-01", "BANK-02", "BANK-03", "BANK-04", "BANK-05",
+                    "BANK-06", "BANK-07", "BANK-08", "BANK-09", "BANK-10", "BANK-11"):
+            if not any(r["id"] == cid for r in results):
+                log(cid, False, str(e))
 
     return _finish()
 

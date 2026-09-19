@@ -102,4 +102,18 @@ async def ensure_indexes() -> None:
         name="task_number_unique_partial",
     )
     await db.work_activity.create_index([("entity_type", 1), ("entity_id", 1), ("ts", -1)])
+    await db.bank_accounts.create_index("account_no")
+    await db.bank_accounts.create_index([("account_type", 1), ("primary", -1)])
+    await db.bank_ledger.create_index([("bank_id", 1), ("txn_date", 1)])
+    await db.bank_ledger.create_index("reference_no")
+    try:
+        await db.bank_ledger.drop_index("bank_ledger_source_unique")
+    except Exception:
+        pass
+    await db.bank_ledger.create_index(
+        [("source_type", 1), ("source_id", 1)],
+        unique=True,
+        partialFilterExpression={"source_id": {"$type": "string"}},
+        name="bank_ledger_source_unique",
+    )
     logger.info("Mongo indexes ensured")

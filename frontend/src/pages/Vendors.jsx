@@ -28,14 +28,22 @@ export default function Vendors() {
   const [bForm, setBForm] = useState({ vendor_id: "", bill_no: "", bill_date: new Date().toISOString().slice(0, 10), due_date: "", itc_eligible: true, notes: "" });
   const [bLines, setBLines] = useState([emptyBillLine()]);
   const [payBill, setPayBill] = useState(null);
-  const [payForm, setPayForm] = useState({ payment_date: new Date().toISOString().slice(0, 10), amount: "", method: "neft", reference_no: "" });
+  const [payForm, setPayForm] = useState({ payment_date: new Date().toISOString().slice(0, 10), amount: "", method: "neft", reference_no: "", bank_id: "" });
+  const [banks, setBanks] = useState([]);
 
   const load = () => {
     api.get("/vendors").then((r) => setVendors(r.data)).catch(() => {});
     api.get("/bills").then((r) => setBills(r.data)).catch(() => {});
     api.get("/vendor-payments").then((r) => setVpays(r.data)).catch(() => {});
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    api.get("/banks").then((r) => {
+      setBanks(r.data || []);
+      const primary = (r.data || []).find((b) => b.primary) || (r.data || []).find((b) => b.account_type === "bank");
+      if (primary) setPayForm((f) => ({ ...f, bank_id: f.bank_id || primary.id }));
+    }).catch(() => {});
+  }, []);
 
   const saveVendor = async (e) => {
     e.preventDefault();
@@ -271,9 +279,17 @@ export default function Vendors() {
               <Input data-testid="vpay-amount-input" type="number" step="0.01" max={payBill?.balance} required value={payForm.amount} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} className="font-mono" /></div>
             <div><Label>Date *</Label>
               <Input type="date" required value={payForm.payment_date} onChange={(e) => setPayForm({ ...payForm, payment_date: e.target.value })} /></div>
+            <div><Label>Bank / Cash *</Label>
+              <Select value={payForm.bank_id} onValueChange={(v) => setPayForm({ ...payForm, bank_id: v })}>
+                <SelectTrigger data-testid="vpay-bank-select"><SelectValue placeholder="Select account" /></SelectTrigger>
+                <SelectContent className="bg-white">
+                  {banks.map((b) => <SelectItem key={b.id} value={b.id}>{b.label || b.bank_name}</SelectItem>)}
+                </SelectContent>
+              </Select></div>
             <div><Label>Reference</Label>
               <Input value={payForm.reference_no} onChange={(e) => setPayForm({ ...payForm, reference_no: e.target.value })} className="font-mono" /></div>
-            <Button data-testid="vpay-save-btn" type="submit" className="w-full bg-[#0F284E] hover:bg-[#17386D] text-white">Record Payment</Button>
+            <Button data-testid="vpay-save-btn" type="submit" disabled={!payForm.bank_id}
+              className="w-full bg-[#0F284E] hover:bg-[#17386D] text-white">Record Payment</Button>
           </form>
         </DialogContent>
       </Dialog>

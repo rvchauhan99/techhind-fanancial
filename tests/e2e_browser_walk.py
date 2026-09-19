@@ -27,6 +27,7 @@ ROUTES = [
     ("/subscriptions", "Subscriptions", True),
     ("/invoices", "Tax Invoices", True),
     ("/expenses", "Expense", True),
+    ("/banks", "Bank Ledger", True),
     ("/settings", "Branding", True),
     ("/imports", "Import", False),
     ("/accountant-pack", "Accountant", False),

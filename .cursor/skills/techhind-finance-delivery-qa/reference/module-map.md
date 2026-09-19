@@ -8,6 +8,7 @@
 | Customers / products / subscriptions | `routers/catalog.py` | `/customers`, `/customers/:id`, `/products`, `/subscriptions` | `customers`, `products`, `subscriptions` | CAT-01…05 |
 | Invoices / CN / DN / payments | `routers/billing.py` | `/invoices`, `/invoices/new`, `/invoices/:id`, `/invoices/:id/edit`, `/payments` | `invoices`, `payments` | INV-01…10, INV-DN-01, INV-TDS-01, INV-CONCUR-01, INV-PAY-DEL-01 |
 | Vendors / bills / vouchers | `routers/payables.py` | `/vendors`, `/expenses` | `vendors`, `purchase_bills`, `vendor_payments`, `expense_vouchers` | PAY-01…05 |
+| Bank ledger | `routers/banks.py`, `bank_ledger.py` | `/banks`, `/banks/:id` | `bank_accounts`, `bank_ledger` | BANK-01…11 |
 | Dashboard / aging | `routers/dashboard.py` | `/dashboard`, `/aging` | (aggregates) | DASH-01…04 |
 | Period close | `routers/periods.py` | `/period-close` | `periods` | OPS-05, OPS-PERIOD-DATE |
 | Reports / GSTR / pack | `routers/reports.py` | `/accountant-pack` | — | OPS-01…06 |
@@ -17,7 +18,8 @@
 | Org RBAC | `routers/rbac.py`, `rbac_seed.py` | `/roles` (nav from `/rbac/me`) | `org_roles`, `menus`, `role_menus` | RBAC-01… |
 | Work (projects / tasks) | `routers/work.py` | `/projects`, `/projects/:id`, `/tasks`, `/tasks/:id`, `/work-report` | `projects`, `tasks`, `work_activity` | WRK-01…, TSK-01… (List/Kanban/Deadline, checklist, files, observers, reminders) |
 | Email log | `email_service.py` | — | `email_log` | INV-05, CAT-05 |
-| Indexes / seed | `indexes.py`, `seed.py` | — | (all) | `make seed-qa` |
+| Indexes / seed | `indexes.py`, `seed.py` | — | (all) | `make seed-qa` (QA DB suffix only) |
+| Prod cutover | `scripts/prod_bootstrap.py`, `scripts/cutover_import.py` | — | (bootstrap + import) | CUTOVER-01…05 |
 
 ## Shared helpers
 

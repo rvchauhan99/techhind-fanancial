@@ -177,6 +177,7 @@ MENUS = [
     # Payables
     ("vendors", "Vendors & Bills", "/vendors", "Payables & Expenses", "Briefcase", 210),
     ("expenses", "Expense Vouchers", "/expenses", "Payables & Expenses", "Wallet", 220),
+    ("banks", "Bank Ledger", "/banks", "Payables & Expenses", "Landmark", 225),
     ("aging", "AR / AP Aging", "/aging", "Payables & Expenses", "CalendarClock", 230),
     # Governance
     ("period_close", "Period Close", "/period-close", "Governance", "Lock", 310),
@@ -193,18 +194,18 @@ ROLE_MENU_KEYS = {
     "accountant": [
         "dashboard", "tickets", "projects", "tasks", "work_report",
         "invoices", "payments", "customers", "subscriptions", "products",
-        "vendors", "expenses", "aging",
+        "vendors", "expenses", "banks", "aging",
         "period_close", "accountant_pack", "imports", "audit", "settings",
     ],
     "ops": [
         "dashboard", "tickets", "projects", "tasks",
         "invoices", "payments", "customers", "subscriptions", "products",
-        "vendors", "expenses", "aging", "imports",
+        "vendors", "expenses", "banks", "aging", "imports",
     ],
     "viewer": [
         "dashboard", "tickets", "projects", "tasks", "work_report",
         "invoices", "payments", "customers", "subscriptions", "products",
-        "vendors", "expenses", "aging",
+        "vendors", "expenses", "banks", "aging",
     ],
     "project_manager": [
         "dashboard", "projects", "tasks", "work_report", "customers", "tickets",

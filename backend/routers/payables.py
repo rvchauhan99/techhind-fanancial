@@ -135,6 +135,7 @@ class VPaymentIn(BaseModel):
     amount: float
     method: str = "neft"
     reference_no: str = ""
+    bank_id: str = ""
     allocations: List[VAllocIn] = []
     notes: str = ""
 
@@ -182,10 +183,13 @@ async def create_vendor_payment(body: VPaymentIn, user=Depends(require_roles(*FI
             "id": new_id(), "payment_ref": ref, "vendor_id": body.vendor_id,
             "vendor_name": vendor.get("name"), "payment_date": body.payment_date,
             "amount": r2(body.amount), "method": body.method, "reference_no": body.reference_no,
+            "bank_id": body.bank_id or "",
             "allocations": alloc_docs, "unallocated": r2(body.amount - total_alloc),
             "notes": body.notes, "created_by": user["id"], "created_at": iso_now(),
         }
         await db.vendor_payments.insert_one(doc, **opts)
+        import bank_ledger as bl
+        await bl.post_vendor_payment(doc, session=session)
         return doc
 
     from core import run_in_transaction
@@ -205,6 +209,7 @@ class VoucherIn(BaseModel):
     tax_rate: float = 0
     vendor_name: str = ""
     paid_via: str = ""
+    bank_id: str = ""
     type: str = "expense"  # expense | salary_summary
 
 
@@ -219,6 +224,11 @@ async def create_voucher(body: VoucherIn, user=Depends(require_roles(*WRITER_ROL
     await assert_period_open(body.voucher_date, user)
     tax = r2(body.amount * body.tax_rate / 100)
     doc = body.model_dump()
+    # Keep paid_via label in sync for display
+    if body.bank_id and not body.paid_via:
+        acct = await db.bank_accounts.find_one({"id": body.bank_id}, {"_id": 0, "bank_name": 1})
+        if acct:
+            doc["paid_via"] = acct.get("bank_name") or ""
     doc.update({"id": new_id(), "voucher_no": None, "tax_amount": tax,
                 "total": r2(body.amount + tax), "status": "draft", "attachments": [],
                 "created_by": user["id"], "created_at": iso_now()})
@@ -248,8 +258,23 @@ async def approve_voucher(vid: str, user=Depends(require_roles(*FINANCE_ROLES)))
         raise HTTPException(status_code=400, detail="Only pending vouchers can be approved")
     await assert_period_open(cur["voucher_date"], user)
     number = await next_number("EV", date.fromisoformat(cur["voucher_date"]))
-    await db.expense_vouchers.update_one({"id": vid}, {"$set": {"status": "posted", "voucher_no": number,
-                                                                "approved_by": user["id"], "approved_at": iso_now()}})
+
+    async def _do(session):
+        opts = {"session": session} if session else {}
+        await db.expense_vouchers.update_one(
+            {"id": vid},
+            {"$set": {"status": "posted", "voucher_no": number,
+                      "approved_by": user["id"], "approved_at": iso_now()}},
+            **opts,
+        )
+        posted = {**cur, "status": "posted", "voucher_no": number,
+                  "approved_by": user["id"], "approved_at": iso_now()}
+        import bank_ledger as bl
+        await bl.post_expense_voucher(posted, session=session)
+        return posted
+
+    from core import run_in_transaction
+    await run_in_transaction(_do)
     await audit(user, "voucher_approved", "expense_voucher", vid,
                 f"Voucher {number} approved & posted — ₹{cur['total']:,.2f} ({cur['category']})")
     return await db.expense_vouchers.find_one({"id": vid}, {"_id": 0})

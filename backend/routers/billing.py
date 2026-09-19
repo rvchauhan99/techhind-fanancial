@@ -375,6 +375,7 @@ class PaymentIn(BaseModel):
     tds_amount: float = 0
     method: str = "upi"  # upi|neft|rtgs|cheque|cash|card
     reference_no: str = ""
+    bank_id: str = ""
     allocations: List[AllocationIn] = []
     notes: str = ""
 
@@ -451,10 +452,12 @@ async def create_payment(body: PaymentIn, user=Depends(require_roles(*WRITER_ROL
         doc = {"id": new_id(), "receipt_no": receipt_no, "customer_id": body.customer_id,
                "customer_name": customer.get("legal_name"), "payment_date": body.payment_date,
                "amount": r2(body.amount), "tds_amount": r2(body.tds_amount), "method": body.method,
-               "reference_no": body.reference_no,
+               "reference_no": body.reference_no, "bank_id": body.bank_id or "",
                "allocations": alloc_docs, "unallocated": r2(total_credit - total_alloc),
                "notes": body.notes, "created_by": user["id"], "created_at": iso_now()}
         await db.payments.insert_one(doc, **opts)
+        import bank_ledger as bl
+        await bl.post_payment_receipt(doc, session=session)
         return doc
 
     doc = await run_in_transaction(_do)
@@ -488,6 +491,8 @@ async def delete_payment(pid: str, user=Depends(require_roles(*FINANCE_ROLES))):
                     {"$set": {"amount_paid": new_paid, "balance": new_balance, "status": new_status}},
                     **opts,
                 )
+        import bank_ledger as bl
+        await bl.reverse_by_source("payment", pid, session=session)
         await db.payments.delete_one({"id": pid}, **opts)
 
     await run_in_transaction(_do)

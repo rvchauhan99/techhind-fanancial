@@ -89,3 +89,7 @@ credentials.json
 *.key
 .credentials
 frontend/node_modules/.cache/default-development/4.pack
+
+# Production cutover source files (xlsx/csv) — keep README only
+backend/cutover/*
+!backend/cutover/README.md

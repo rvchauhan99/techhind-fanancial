@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from core import db, require_roles, ALL_ROLES, FINANCE_ROLES, today, fy_of
 from gst import r2
+import bank_ledger as bl
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 
@@ -211,6 +212,7 @@ async def dashboard_summary(user=Depends(require_roles(*ALL_ROLES))):
             "outstanding": outstanding, "gst_liability": gst_liability,
             "output_tax_month": output_tax_month, "itc_month": itc_month,
             "active_subscriptions": active_count,
+            "cash_bank_position": await bl.total_cash_position(),
         },
         "trend": trend, "top_customers": top_customers,
         "expense_by_category": expense_by_category,

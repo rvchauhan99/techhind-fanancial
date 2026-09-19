@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 
 const emptyForm = { voucher_date: new Date().toISOString().slice(0, 10), category: "", narration: "",
-  amount: "", tax_rate: 0, vendor_name: "", paid_via: "HDFC Bank", type: "expense" };
+  amount: "", tax_rate: 0, vendor_name: "", paid_via: "", bank_id: "", type: "expense" };
 
 export default function Expenses() {
   const { can } = useAuth();
@@ -33,7 +33,18 @@ export default function Expenses() {
   useEffect(() => {
     api.get("/settings/masters").then((r) => {
       setCategories((r.data.expense_categories || []).map((c) => c.name));
-      setBanks((r.data.banks || []).map((b) => b.bank_name));
+    }).catch(() => {});
+    api.get("/banks").then((r) => {
+      const list = r.data || [];
+      setBanks(list);
+      const primary = list.find((b) => b.primary) || list.find((b) => b.account_type === "bank");
+      if (primary) {
+        setForm((f) => ({
+          ...f,
+          bank_id: f.bank_id || primary.id,
+          paid_via: f.paid_via || primary.bank_name,
+        }));
+      }
     }).catch(() => {});
   }, []);
 
@@ -170,16 +181,21 @@ export default function Expenses() {
               </Select></div>
             <div><Label>Vendor / payee</Label>
               <Input value={form.vendor_name} onChange={(e) => setForm({ ...form, vendor_name: e.target.value })} /></div>
-            <div><Label>Paid via</Label>
-              <Select value={form.paid_via} onValueChange={(v) => setForm({ ...form, paid_via: v })}>
-                <SelectTrigger data-testid="voucher-paidvia-select"><SelectValue /></SelectTrigger>
-                <SelectContent className="bg-white">{banks.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
+            <div><Label>Paid via *</Label>
+              <Select value={form.bank_id} onValueChange={(v) => {
+                const b = banks.find((x) => x.id === v);
+                setForm({ ...form, bank_id: v, paid_via: b?.bank_name || "" });
+              }}>
+                <SelectTrigger data-testid="voucher-paidvia-select"><SelectValue placeholder="Select account" /></SelectTrigger>
+                <SelectContent className="bg-white">
+                  {banks.map((b) => <SelectItem key={b.id} value={b.id}>{b.label || b.bank_name}</SelectItem>)}
+                </SelectContent>
               </Select></div>
             <div className="col-span-2 text-xs text-slate-500 font-mono">
               Total: {fmtINR(Number(form.amount || 0) * (1 + Number(form.tax_rate || 0) / 100))} — voucher number assigned on approval (TH/EV/…)</div>
             <div className="col-span-2 flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button data-testid="voucher-save-btn" type="submit" disabled={!form.category}
+              <Button data-testid="voucher-save-btn" type="submit" disabled={!form.category || !form.bank_id}
                 className="bg-[#0F284E] hover:bg-[#17386D] text-white">Create Voucher</Button>
             </div>
           </form>

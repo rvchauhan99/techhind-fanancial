@@ -28,6 +28,8 @@ import Tasks from "./pages/Tasks";
 import TaskDetail from "./pages/TaskDetail";
 import WorkReport from "./pages/WorkReport";
 import Roles from "./pages/Roles";
+import Banks from "./pages/Banks";
+import BankStatement from "./pages/BankStatement";
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
@@ -60,6 +62,8 @@ export default function App() {
           <Route path="/aging" element={<RequireAuth><Aging /></RequireAuth>} />
           <Route path="/vendors" element={<RequireAuth><Vendors /></RequireAuth>} />
           <Route path="/expenses" element={<RequireAuth><Expenses /></RequireAuth>} />
+          <Route path="/banks" element={<RequireAuth><Banks /></RequireAuth>} />
+          <Route path="/banks/:id" element={<RequireAuth><BankStatement /></RequireAuth>} />
           <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
           <Route path="/audit" element={<RequireAuth><Audit /></RequireAuth>} />
           <Route path="/imports" element={<RequireAuth><Imports /></RequireAuth>} />
