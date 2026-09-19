@@ -9,49 +9,62 @@ on:
       - ".github/workflows/deploy-backend.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: deploy-backend-vultr
   cancel-in-progress: false
 
 jobs:
   deploy:
+    name: Deploy techhind-finance to Vultr
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # Same VPS as mealhq-api; override via repo Variables if needed
+      VULTR_HOST: ${{ vars.VULTR_HOST || '139.84.223.174' }}
+      VULTR_USER: ${{ vars.VULTR_USER || 'root' }}
+      VULTR_HEALTH_URL: ${{ vars.VULTR_HEALTH_URL || 'https://api.techhind.in/health' }}
+      VULTR_READY_URL: ${{ vars.VULTR_READY_URL || 'https://api.techhind.in/ready' }}
+      SKIP_ENV_SYNC: "1"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup SSH
-        env:
-          VULTR_SSH_PRIVATE_KEY: ${{ secrets.VULTR_SSH_PRIVATE_KEY }}
-          VULTR_HOST: ${{ secrets.VULTR_HOST }}
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VULTR_SSH_PRIVATE_KEY }}
+
+      - name: Add Vultr host key
         run: |
-          set -euo pipefail
-          test -n "${VULTR_SSH_PRIVATE_KEY}" || { echo "Missing secret VULTR_SSH_PRIVATE_KEY"; exit 1; }
-          test -n "${VULTR_HOST}" || { echo "Missing secret VULTR_HOST"; exit 1; }
           mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$VULTR_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$VULTR_HOST" >> ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
+          ssh-keyscan -H "${VULTR_HOST}" >> ~/.ssh/known_hosts
 
       - name: Deploy via deploy.sh
-        env:
-          VULTR_HOST: ${{ secrets.VULTR_HOST }}
-          VULTR_USER: ${{ secrets.VULTR_USER }}
-          SKIP_ENV_SYNC: "1"
         run: |
           set -euo pipefail
-          USER="${VULTR_USER:-root}"
-          test -n "${VULTR_HOST}" || { echo "Missing secret VULTR_HOST"; exit 1; }
           chmod +x deploy/vultr/deploy.sh
-          ./deploy/vultr/deploy.sh "${USER}@${VULTR_HOST}"
+          ./deploy/vultr/deploy.sh "${VULTR_USER}@${VULTR_HOST}"
 
-      - name: Smoke health
+      - name: Public health check
         run: |
           set -euo pipefail
-          curl -fsS --max-time 30 https://api.techhind.in/health
-          echo
-          curl -fsS --max-time 45 https://api.techhind.in/ready
-          echo
+          echo "Health: ${VULTR_HEALTH_URL}"
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            CODE="$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 20 "${VULTR_HEALTH_URL}" || true)"
+            if [[ "$CODE" == "200" ]]; then
+              cat /tmp/health.json
+              echo
+              curl -fsS --max-time 45 "${VULTR_READY_URL}" || true
+              echo
+              exit 0
+            fi
+            echo "Attempt ${i}: HTTP ${CODE}; retrying..."
+            sleep 10
+          done
+          echo "Public health check failed"
+          cat /tmp/health.json || true
+          exit 1

@@ -9,7 +9,7 @@
 | `api.techhind.in` | Shared **Caddy** (calling-crm stack) → host `:8010` |
 | `admin.techhind.in` | Vercel (CRA) |
 
-This VPS already binds **443** to Caddy and **80** to another Docker app. Do **not** install host nginx/certbot for this API — add a Caddy site block instead.
+This VPS already binds **443** to Caddy and **80** to another Docker app. Do **not** install host nginx/certbot for this API — TLS terminates at shared Caddy (`caddy-api.techhind.in.conf` appended to `/opt/calling-crm/deploy/Caddyfile`). There is no nginx site template in this repo.
 
 Default SSH: `mealhq-vultr` → `root@139.84.223.174`.
 
@@ -53,17 +53,20 @@ ssh mealhq-vultr 'mkdir -p ~/.ssh && chmod 700 ~/.ssh'
 ssh mealhq-vultr "echo '$(cat techhind-finance-deploy.pub)' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
 ```
 
-### GitHub repo secrets
+### GitHub repo secrets / variables
 
-Repo → **Settings → Secrets and variables → Actions** → add:
+Repo → **Settings → Secrets and variables → Actions**
 
-| Secret | Example / notes |
-|--------|-----------------|
-| `VULTR_SSH_PRIVATE_KEY` | Full private key PEM (`-----BEGIN OPENSSH PRIVATE KEY-----` …) matching the public key on the VPS |
-| `VULTR_HOST` | `139.84.223.174` |
-| `VULTR_USER` | `root` |
+| Name | Type | Notes |
+|------|------|--------|
+| `VULTR_SSH_PRIVATE_KEY` | **Secret** (required) | Same name as [mealhq-api](https://github.com/rvchauhan99/mealhq-api); private key whose public half is on `root@139.84.223.174` |
+| `VULTR_HOST` | Variable (optional) | Defaults to `139.84.223.174` |
+| `VULTR_USER` | Variable (optional) | Defaults to `root` |
+| `VULTR_HEALTH_URL` | Variable (optional) | Defaults to `https://api.techhind.in/health` |
 
 Do **not** put Mongo/JWT/Brevo secrets in Actions — they stay in `/opt/techhind-finance/backend/.env` on the server.
+
+Workflow matches mealhq-api: `webfactory/ssh-agent` + `SKIP_ENV_SYNC=1` so remote `.env` is never overwritten.
 
 ### Verify after first run
 
