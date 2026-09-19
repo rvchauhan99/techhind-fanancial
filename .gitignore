@@ -45,7 +45,17 @@ dump.rdb
 
 # System files
 .DS_Store
+**/.DS_Store
 *.pem
+
+# Curl / auth playbook artifacts
+cookies.txt
+*.cookies
+
+# CI deploy key material (never commit)
+techhind-finance-deploy
+techhind-finance-deploy.pub
+techhind-finance-deploy*
 
 # Python
 __pycache__/

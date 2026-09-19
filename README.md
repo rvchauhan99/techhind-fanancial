@@ -49,3 +49,17 @@ See [AGENTS.md](AGENTS.md) and `.cursor/skills/techhind-finance-delivery-qa/`.
 python tests/e2e_critical_api.py
 python tests/e2e_browser_walk.py
 ```
+
+## Local-only / gitignored (do not commit)
+
+| Path | Purpose |
+|------|---------|
+| `backend/.env`, `backend/.env.production`, `frontend/.env` | Secrets — never commit |
+| `memory/test_credentials.md` | Local QA passwords |
+| `backend/cutover/*` (except `README.md`) | Cutover CSV/xlsx for re-import / balance check |
+| `test_reports/` | E2E/load screenshots & logs (regenerate via Makefile / e2e) |
+| `frontend/build/`, `node_modules/`, `backend/.venv/`, `__pycache__/` | Local tooling |
+| `backend/.local_storage/` | Local file storage when R2 is unset |
+| `techhind-finance-deploy*` | CI SSH deploy key material |
+
+**Keep for ops:** cutover scripts under `backend/scripts/`, `deploy/vultr/`, docs, `.cursor/` skills, and `auth_testing.md`.
