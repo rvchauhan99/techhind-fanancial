@@ -1,0 +1,57 @@
+name: Deploy backend to Vultr
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "deploy/vultr/**"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend-vultr
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        env:
+          VULTR_SSH_PRIVATE_KEY: ${{ secrets.VULTR_SSH_PRIVATE_KEY }}
+          VULTR_HOST: ${{ secrets.VULTR_HOST }}
+        run: |
+          set -euo pipefail
+          test -n "${VULTR_SSH_PRIVATE_KEY}" || { echo "Missing secret VULTR_SSH_PRIVATE_KEY"; exit 1; }
+          test -n "${VULTR_HOST}" || { echo "Missing secret VULTR_HOST"; exit 1; }
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VULTR_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VULTR_HOST" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy via deploy.sh
+        env:
+          VULTR_HOST: ${{ secrets.VULTR_HOST }}
+          VULTR_USER: ${{ secrets.VULTR_USER }}
+          SKIP_ENV_SYNC: "1"
+        run: |
+          set -euo pipefail
+          USER="${VULTR_USER:-root}"
+          test -n "${VULTR_HOST}" || { echo "Missing secret VULTR_HOST"; exit 1; }
+          chmod +x deploy/vultr/deploy.sh
+          ./deploy/vultr/deploy.sh "${USER}@${VULTR_HOST}"
+
+      - name: Smoke health
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 30 https://api.techhind.in/health
+          echo
+          curl -fsS --max-time 45 https://api.techhind.in/ready
+          echo

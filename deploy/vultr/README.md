@@ -27,11 +27,50 @@ python3 deploy/vultr/make_prod_env.py
 #   MONGO_* / BUCKET_* / BREVO_* from backend/.env (Atlas)
 ```
 
-## Deploy
+## Deploy (local)
 
 ```bash
 chmod +x deploy/vultr/deploy.sh
 ./deploy/vultr/deploy.sh mealhq-vultr
+```
+
+CI sets `SKIP_ENV_SYNC=1` so the VPS `.env` is never overwritten from GitHub Actions.
+
+## CI/CD (GitHub Actions → Vultr)
+
+Workflow: [`.github/workflows/deploy-backend.yml`](../../.github/workflows/deploy-backend.yml)
+
+**Triggers:** push to `main` when `backend/**`, `deploy/vultr/**`, or the workflow file changes; also **workflow_dispatch**.
+
+### One-time: SSH deploy key on the VPS
+
+```bash
+# On your laptop (or CI secrets store) — generate a dedicated key if you do not already have one:
+ssh-keygen -t ed25519 -f techhind-finance-deploy -C "github-actions-techhind-finance" -N ""
+
+# Append the PUBLIC key on Vultr:
+ssh mealhq-vultr 'mkdir -p ~/.ssh && chmod 700 ~/.ssh'
+ssh mealhq-vultr "echo '$(cat techhind-finance-deploy.pub)' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+```
+
+### GitHub repo secrets
+
+Repo → **Settings → Secrets and variables → Actions** → add:
+
+| Secret | Example / notes |
+|--------|-----------------|
+| `VULTR_SSH_PRIVATE_KEY` | Full private key PEM (`-----BEGIN OPENSSH PRIVATE KEY-----` …) matching the public key on the VPS |
+| `VULTR_HOST` | `139.84.223.174` |
+| `VULTR_USER` | `root` |
+
+Do **not** put Mongo/JWT/Brevo secrets in Actions — they stay in `/opt/techhind-finance/backend/.env` on the server.
+
+### Verify after first run
+
+```bash
+# Actions → Deploy backend to Vultr → green
+curl -sS https://api.techhind.in/health
+curl -sS https://api.techhind.in/ready
 ```
 
 ## DNS

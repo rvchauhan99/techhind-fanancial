@@ -2,6 +2,7 @@
 # Deploy TechHind Finance backend to Vultr (no Mongo — Atlas only).
 # Uses systemd uvicorn :8010 + shared Caddy (calling-crm) for TLS on 443.
 # Usage: ./deploy/vultr/deploy.sh [user@host]
+# Env: SKIP_ENV_SYNC=1  — never overwrite remote .env (used by GitHub Actions)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -29,7 +30,9 @@ rsync -az --delete \
   --exclude '.env.production' \
   "${ROOT}/backend/" "${REMOTE}:${BACKEND_REMOTE}/"
 
-if [[ -f "${ROOT}/backend/.env.production" ]]; then
+if [[ "${SKIP_ENV_SYNC:-0}" == "1" ]]; then
+  echo "==> SKIP_ENV_SYNC=1 — remote .env left unchanged"
+elif [[ -f "${ROOT}/backend/.env.production" ]]; then
   echo "==> Sync .env.production → remote .env"
   rsync -az "${ROOT}/backend/.env.production" "${REMOTE}:${BACKEND_REMOTE}/.env"
   ssh "${REMOTE}" "chmod 600 ${BACKEND_REMOTE}/.env; chown www-data:www-data ${BACKEND_REMOTE}/.env || true"
