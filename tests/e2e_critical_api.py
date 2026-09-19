@@ -1271,6 +1271,26 @@ def main():
         hdfc_id = (hdfc or {}).get("id")
         bal_before = float((hdfc or {}).get("live_balance") or 0)
 
+        # Statement newest-first; top running_balance matches live when no date filter
+        if hdfc_id:
+            stmt_sort = requests.get(f"{BASE}/banks/{hdfc_id}/statement", headers=H(admin), timeout=30)
+            sj = stmt_sort.json() if stmt_sort.ok else {}
+            items = sj.get("items") or []
+            live_s = float(sj.get("live_balance") or 0)
+            newest_first = True
+            if len(items) >= 2:
+                newest_first = (items[0].get("txn_date") or "") >= (items[-1].get("txn_date") or "")
+            top_bal_ok = True
+            if items:
+                top_bal_ok = abs(float(items[0].get("running_balance") or 0) - live_s) < 0.02
+            log(
+                "BANK-SORT-01",
+                stmt_sort.status_code == 200 and newest_first and top_bal_ok,
+                f"n={len(items)} newest_first={newest_first} top_bal={items[0].get('running_balance') if items else None} live={live_s}",
+            )
+        else:
+            log("BANK-SORT-01", False, "no hdfc")
+
         # Need an open invoice + customer for receipt
         custs = requests.get(f"{BASE}/customers", headers=H(admin), timeout=30).json() or []
         cust = custs[0] if custs else None
@@ -1527,7 +1547,7 @@ def main():
         else:
             log("BANK-11", False, "no hdfc")
     except Exception as e:
-        for cid in ("BANK-01", "BANK-02", "BANK-03", "BANK-04", "BANK-05",
+        for cid in ("BANK-01", "BANK-SORT-01", "BANK-02", "BANK-03", "BANK-04", "BANK-05",
                     "BANK-06", "BANK-07", "BANK-08", "BANK-09", "BANK-10", "BANK-11"):
             if not any(r["id"] == cid for r in results):
                 log(cid, False, str(e))

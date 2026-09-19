@@ -40,6 +40,17 @@ All primary buttons, tabs, inputs, filters, KPIs must have kebab-case `data-test
 - Convention: `date_from`/`date_to` on primary date; prefixed keys for secondary ranges (`renewal_from`, `due_from`)
 - Filter controls use `data-testid="filter-{key}"`; clear = `filter-clear-btn`
 
+## List sort conventions
+
+| Kind | Default order | Examples |
+|------|---------------|----------|
+| Operational transactions | Newest first (date / `updated_at` desc) | Invoices, payments, bills, vouchers, tickets, tasks, bank ledger statement |
+| Masters / directories | A–Z by name | Customers, products, vendors, users, bank accounts |
+| Urgency queues | Soonest / overdue first | Subscription renewals, open-invoice due, task deadline view |
+| Threads / statutory packs | Chronological ascending | Ticket messages, GSTR / accountant-pack month docs |
+
+Bank ledger: compute running balance oldest→newest, then **reverse** for API/UI/CSV so newest row is first and its `running_balance` equals live balance.
+
 ## PDF branding
 
 Official TechHind tax invoice layout: company header + GSTIN, billed/shipped to, HSN lines, tax summary, amount in words, bank details, signatory. Spec in `docs/design-guidelines.json` → `branded_pdf_spec`.

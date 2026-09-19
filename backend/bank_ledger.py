@@ -240,6 +240,9 @@ async def statement(
             "recon_mismatch": recon_diff is not None and abs(recon_diff) > 0.01,
         })
 
+    # Newest first for UI/export; balances were computed chronological ascending.
+    enriched.reverse()
+
     live = await live_balance(bank_id)
     return {
         "account": acct,
