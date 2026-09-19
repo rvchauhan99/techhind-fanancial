@@ -688,6 +688,170 @@ def main():
     except Exception as e:
         log("AUTH-2FA-01", False, str(e))
 
+    # ---- User master / first-login / freelancer ----
+    try:
+        import uuid as _uuid
+        fl_email = f"fl-{_uuid.uuid4().hex[:8]}@techhind.in"
+        create = requests.post(
+            f"{BASE}/users",
+            headers=H(admin2),
+            json={"name": "E2E Freelancer", "email": fl_email, "password": "TempPass1!", "role": "freelancer"},
+            timeout=30,
+        )
+        cu = create.json() if create.ok else {}
+        log(
+            "USR-01",
+            create.status_code == 200 and cu.get("must_change_password") is True and cu.get("role") == "freelancer",
+            f"status={create.status_code} mcp={cu.get('must_change_password')} role={cu.get('role')}",
+        )
+        login1 = requests.post(
+            f"{BASE}/auth/login",
+            json={"email": fl_email, "password": "TempPass1!"},
+            timeout=30,
+        )
+        tok1 = login1.json().get("access_token") if login1.ok else None
+        must = (login1.json().get("user") or {}).get("must_change_password") if login1.ok else None
+        blocked = requests.get(f"{BASE}/invoices", headers=H(tok1), timeout=30) if tok1 else None
+        chg = requests.post(
+            f"{BASE}/auth/change-password",
+            headers=H(tok1),
+            json={"current_password": "TempPass1!", "new_password": "NewPass12!"},
+            timeout=30,
+        ) if tok1 else None
+        login2 = requests.post(
+            f"{BASE}/auth/login",
+            json={"email": fl_email, "password": "NewPass12!"},
+            timeout=30,
+        )
+        tok2 = login2.json().get("access_token") if login2.ok else None
+        ok_after = requests.get(f"{BASE}/work/tasks", headers=H(tok2), timeout=30) if tok2 else None
+        still_blocked = requests.get(f"{BASE}/invoices", headers=H(tok2), timeout=30) if tok2 else None
+        log(
+            "USR-02",
+            login1.status_code == 200 and must is True
+            and blocked is not None and blocked.status_code == 403
+            and chg is not None and chg.status_code == 200
+            and ok_after is not None and ok_after.status_code == 200
+            and still_blocked is not None and still_blocked.status_code in (403, 200),
+            f"must={must} blocked={blocked.status_code if blocked else None} chg={chg.status_code if chg else None} tasks={ok_after.status_code if ok_after else None}",
+        )
+        # Freelancer finance should still be denied by capability even after password change
+        if still_blocked is not None and still_blocked.status_code == 200:
+            # invoices list may be ALL_ROLES — check approve/create instead
+            inv_post = requests.post(
+                f"{BASE}/invoices",
+                headers=H(tok2),
+                json={"customer_id": "x", "doc_type": "INV", "lines": []},
+                timeout=30,
+            )
+            finance_denied = inv_post.status_code in (403, 400, 422)
+        else:
+            finance_denied = still_blocked is not None and still_blocked.status_code == 403
+        uid = cu.get("id")
+        reset = requests.post(
+            f"{BASE}/users/{uid}/reset-password",
+            headers=H(admin2),
+            json={"password": "ResetPass1!"},
+            timeout=30,
+        ) if uid else None
+        login3 = requests.post(
+            f"{BASE}/auth/login",
+            json={"email": fl_email, "password": "ResetPass1!"},
+            timeout=30,
+        )
+        must3 = (login3.json().get("user") or {}).get("must_change_password") if login3.ok else None
+        log(
+            "USR-03",
+            reset is not None and reset.status_code == 200 and must3 is True,
+            f"reset={reset.status_code if reset else None} must={must3}",
+        )
+        setup2 = requests.post(f"{BASE}/auth/2fa/setup", headers=H(admin2), timeout=30)
+        sj = setup2.json() if setup2.ok else {}
+        log(
+            "AUTH-2FA-02",
+            setup2.status_code == 200 and bool(sj.get("qr_data_url")) and bool(sj.get("secret")),
+            f"status={setup2.status_code} qr={bool(sj.get('qr_data_url'))}",
+        )
+        # Finish password change for freelancer then check menus + scope
+        tok_r = login3.json().get("access_token") if login3.ok else None
+        if tok_r:
+            requests.post(
+                f"{BASE}/auth/change-password",
+                headers=H(tok_r),
+                json={"current_password": "ResetPass1!", "new_password": "FinalPass1!"},
+                timeout=30,
+            )
+        login4 = requests.post(
+            f"{BASE}/auth/login",
+            json={"email": fl_email, "password": "FinalPass1!"},
+            timeout=30,
+        )
+        tok_fl = login4.json().get("access_token") if login4.ok else None
+        rbac_fl = requests.get(f"{BASE}/rbac/me", headers=H(tok_fl), timeout=30) if tok_fl else None
+        mkeys = set((rbac_fl.json() or {}).get("menu_keys") or []) if rbac_fl and rbac_fl.ok else set()
+        log(
+            "RBAC-FL-01",
+            rbac_fl is not None and rbac_fl.status_code == 200 and mkeys == {"tasks", "tickets"},
+            f"keys={mkeys}",
+        )
+        # Create a task assigned to someone else; freelancer must get 403
+        users = requests.get(f"{BASE}/users?active_only=true", headers=H(admin2), timeout=30).json()
+        other = next((u for u in users if u.get("email") != fl_email), users[0] if users else None)
+        task_other = requests.post(
+            f"{BASE}/work/tasks",
+            headers=H(admin2),
+            json={"title": "Not for freelancer", "status": "todo", "priority": "normal",
+                  "assignee_id": (other or {}).get("id"), "task_type": "other"},
+            timeout=30,
+        )
+        toid = task_other.json().get("id") if task_other.ok else None
+        get_deny = requests.get(f"{BASE}/work/tasks/{toid}", headers=H(tok_fl), timeout=30) if tok_fl and toid else None
+        # Assign a ticket to freelancer
+        custs = requests.get(f"{BASE}/customers", headers=H(admin2), timeout=30).json()
+        cid = (custs or [{}])[0].get("id")
+        fl_user = next((u for u in users if u.get("email") == fl_email), None)
+        fl_id = (fl_user or cu).get("id")
+        tkt = requests.post(
+            f"{BASE}/tickets",
+            headers=H(admin2),
+            json={"customer_id": cid, "subject": "FL ticket", "body": "hello", "assignee_id": fl_id},
+            timeout=30,
+        ) if cid and fl_id else None
+        tid_ok = tkt.json().get("id") if tkt and tkt.ok else None
+        get_ok = requests.get(f"{BASE}/tickets/{tid_ok}", headers=H(tok_fl), timeout=30) if tok_fl and tid_ok else None
+        create_deny = requests.post(
+            f"{BASE}/work/tasks",
+            headers=H(tok_fl),
+            json={"title": "Should fail", "status": "todo", "priority": "normal", "task_type": "other"},
+            timeout=30,
+        ) if tok_fl else None
+        log(
+            "RBAC-FL-02",
+            get_deny is not None and get_deny.status_code == 403
+            and get_ok is not None and get_ok.status_code == 200
+            and create_deny is not None and create_deny.status_code == 403,
+            f"deny={get_deny.status_code if get_deny else None} ok={get_ok.status_code if get_ok else None} create={create_deny.status_code if create_deny else None}",
+        )
+        inv_deny = requests.post(
+            f"{BASE}/invoices",
+            headers=H(tok_fl),
+            json={"customer_id": cid or "x", "doc_type": "INV", "lines": []},
+            timeout=30,
+        ) if tok_fl else None
+        log(
+            "RBAC-FL-03",
+            inv_deny is not None and inv_deny.status_code in (403, 400, 422) and finance_denied,
+            f"invoice={inv_deny.status_code if inv_deny else None}",
+        )
+    except Exception as e:
+        log("USR-01", False, str(e))
+        log("USR-02", False, str(e))
+        log("USR-03", False, str(e))
+        log("AUTH-2FA-02", False, str(e))
+        log("RBAC-FL-01", False, str(e))
+        log("RBAC-FL-02", False, str(e))
+        log("RBAC-FL-03", False, str(e))
+
     try:
         custs = requests.get(f"{BASE}/customers", headers=H(admin2), timeout=30).json()
         fe = next((c for c in custs if "FinEdge" in (c.get("trade_name") or c.get("legal_name") or "")), custs[0])

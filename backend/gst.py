@@ -5,13 +5,46 @@ def r2(x) -> float:
     return float(Decimal(str(x)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
+def exclusive_from_inclusive(inclusive, tax_rate: float = 18) -> float:
+    """Back-calculate tax-exclusive rate from a GST-inclusive amount."""
+    rate = float(tax_rate or 0)
+    if rate <= 0:
+        return r2(inclusive)
+    return r2(float(inclusive) / (1 + rate / 100))
+
+
+def normalize_line_rates(lines: list) -> list:
+    """Convert inclusive line rates to exclusive before compute_document.
+
+    If rate_includes_gst / price_includes_gst is true, `rate` is treated as
+    GST-inclusive cash; exclusive rate is stored for GST math and the original
+    inclusive amount is kept as rate_inclusive.
+    """
+    out = []
+    for raw in lines:
+        l = dict(raw)
+        tax_rate = float(l.get("tax_rate", 18) or 0)
+        inclusive_flag = bool(
+            l.get("rate_includes_gst")
+            or l.get("price_includes_gst")
+            or l.get("includes_gst")
+        )
+        rate = float(l.get("rate", 0) or 0)
+        if inclusive_flag and tax_rate > 0:
+            l["rate_inclusive"] = r2(rate)
+            l["rate"] = exclusive_from_inclusive(rate, tax_rate)
+            l["rate_includes_gst"] = False
+        out.append(l)
+    return out
+
+
 def compute_document(lines: list, company_state_code: str, pos_state_code: str,
                      is_export_sez: bool = False, lut_flag: bool = False,
                      reverse_charge: bool = False) -> dict:
     zero_rated = bool(reverse_charge) or (is_export_sez and lut_flag)
     intra = (pos_state_code == company_state_code) and not is_export_sez
     out_lines = []
-    for l in lines:
+    for l in normalize_line_rates(lines):
         qty = float(l.get("qty", 1))
         rate = float(l.get("rate", 0))
         disc = float(l.get("discount", 0) or 0)
@@ -26,12 +59,15 @@ def compute_document(lines: list, company_state_code: str, pos_state_code: str,
             cgst = sgst = 0.0
             igst = tax
         total = r2(taxable + cgst + sgst + igst)
-        out_lines.append({
+        line_out = {
             "description": l.get("description", ""), "product_id": l.get("product_id"),
             "hsn_sac": l.get("hsn_sac", ""), "qty": qty, "unit": l.get("unit", "Nos"),
             "rate": rate, "discount": disc, "taxable": taxable, "tax_rate": tax_rate,
             "cgst": cgst, "sgst": sgst, "igst": igst, "total": total,
-        })
+        }
+        if l.get("rate_inclusive") is not None:
+            line_out["rate_inclusive"] = l["rate_inclusive"]
+        out_lines.append(line_out)
     sub_total = r2(sum(l["qty"] * l["rate"] for l in out_lines))
     total_discount = r2(sum(l["discount"] for l in out_lines))
     total_taxable = r2(sum(l["taxable"] for l in out_lines))

@@ -11,12 +11,24 @@ import { Label } from "../components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
+import FilterBar, { FIELD } from "../components/filters/FilterBar";
+import { useListFilters } from "../hooks/useListFilters";
 
 const TYPES = { saas_plan: "SaaS Plan", one_time: "One-time Sale", service: "Service", addon: "Add-on" };
 const CYCLES = { monthly: "Monthly", quarterly: "Quarterly", half_yearly: "Half-yearly", yearly: "Yearly", one_time: "One-time" };
 
 const emptyForm = { name: "", type: "saas_plan", hsn_sac: "998314", tax_rate: 18, price: 0,
-  billing_cycle: "monthly", unit: "Nos", description: "", active: true };
+  billing_cycle: "monthly", unit: "Nos", description: "", active: true, price_includes_gst: true };
+
+const SCHEMA = [
+  { key: "q", type: FIELD.TEXT, label: "Search", placeholder: "Name / HSN…", width: "w-40" },
+  { key: "type", type: FIELD.SELECT, label: "Type", width: "w-36",
+    options: Object.entries(TYPES).map(([v, l]) => ({ value: v, label: l })) },
+  { key: "billing_cycle", type: FIELD.SELECT, label: "Cycle", width: "w-36",
+    options: Object.entries(CYCLES).map(([v, l]) => ({ value: v, label: l })) },
+  { key: "active", type: FIELD.SELECT, label: "Active", width: "w-28",
+    options: [{ value: "1", label: "Active" }, { value: "0", label: "Inactive" }] },
+];
 
 export default function Products() {
   const { can } = useAuth();
@@ -24,9 +36,10 @@ export default function Products() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const { values, setFilter, clearFilters, activeCount, apiParams } = useListFilters(SCHEMA);
 
-  const load = () => api.get("/products").then((r) => setRows(r.data)).catch(() => {});
-  useEffect(() => { load(); }, []);
+  const load = () => api.get("/products", { params: apiParams }).then((r) => setRows(r.data)).catch(() => {});
+  useEffect(() => { load(); }, [apiParams]); // eslint-disable-line
 
   const openNew = () => { setEditing(null); setForm(emptyForm); setOpen(true); };
   const openEdit = (p) => { setEditing(p); setForm({ ...p }); setOpen(true); };
@@ -34,7 +47,12 @@ export default function Products() {
   const submit = async (e) => {
     e.preventDefault();
     try {
-      const payload = { ...form, price: Number(form.price), tax_rate: Number(form.tax_rate) };
+      const payload = {
+        ...form,
+        price: Number(form.price),
+        tax_rate: Number(form.tax_rate),
+        price_includes_gst: form.price_includes_gst !== false,
+      };
       if (editing) await api.patch(`/products/${editing.id}`, payload);
       else await api.post("/products", payload);
       toast.success(editing ? "Product updated" : "Product created");
@@ -50,6 +68,8 @@ export default function Products() {
       actions={can("admin", "accountant", "ops") && (
         <Button data-testid="new-product-btn" size="sm" onClick={openNew} className="bg-[#0F284E] hover:bg-[#17386D] text-white">
           <Plus className="w-4 h-4 mr-1" /> New Product</Button>)}>
+      <FilterBar schema={SCHEMA} values={values} setFilter={setFilter}
+        clearFilters={clearFilters} activeCount={activeCount} testId="product-filters" />
       <div className="bg-white border border-slate-200 rounded-lg">
         <table className="w-full text-sm" data-testid="products-table">
           <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
@@ -65,7 +85,12 @@ export default function Products() {
                 <td className="px-3 py-2 text-xs">{TYPES[p.type] || p.type}</td>
                 <td className="px-3 py-2 font-mono text-xs">{p.hsn_sac}</td>
                 <td className="px-3 py-2 text-xs">{CYCLES[p.billing_cycle] || p.billing_cycle}</td>
-                <td className="px-3 py-2 text-right font-mono">{fmtINR(p.price)}</td>
+                <td className="px-3 py-2 text-right font-mono">
+                  {fmtINR(p.price)}
+                  <span className="block text-[10px] text-slate-400 font-sans">
+                    {p.price_includes_gst === false ? "excl. GST" : "incl. GST"}
+                  </span>
+                </td>
                 <td className="px-3 py-2 text-right font-mono">{p.tax_rate}%</td>
                 <td className="px-3 py-2">{p.active
                   ? <span className="text-[11px] font-semibold text-emerald-700">Yes</span>
@@ -103,10 +128,14 @@ export default function Products() {
                 <SelectTrigger data-testid="product-tax-select"><SelectValue /></SelectTrigger>
                 <SelectContent className="bg-white">{[0, 5, 12, 18, 28].map((r) => <SelectItem key={r} value={String(r)}>{r}%</SelectItem>)}</SelectContent>
               </Select></div>
-            <div><Label>Price (₹) *</Label>
+            <div><Label>Price (₹{form.price_includes_gst === false ? " excl. GST" : " incl. GST"}) *</Label>
               <Input data-testid="product-price-input" type="number" step="0.01" required value={form.price}
                 onChange={(e) => setForm({ ...form, price: e.target.value })} className="font-mono" /></div>
             <div><Label>Unit</Label><Input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} /></div>
+            <div className="col-span-2 flex items-center gap-2">
+              <Switch data-testid="product-incl-gst-switch" checked={form.price_includes_gst !== false}
+                onCheckedChange={(v) => setForm({ ...form, price_includes_gst: v })} />
+              <Label>Price includes GST (18%)</Label></div>
             <div className="col-span-2"><Label>Description</Label>
               <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
             <div className="col-span-2 flex items-center gap-2">

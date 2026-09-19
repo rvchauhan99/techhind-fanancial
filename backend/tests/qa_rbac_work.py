@@ -140,6 +140,11 @@ def main():
     st, rep, _ = req("GET", "/api/work/report", cookie=admin)
     check("WRK-05b", st == 200 and "totals" in rep, f"totals={rep.get('totals')}")
 
+    # Freelancer role
+    st, roles2, _ = req("GET", "/api/rbac/roles", cookie=admin)
+    keys2 = {r["key"] for r in (roles2 or [])}
+    check("RBAC-FL-01a", "freelancer" in keys2, f"keys={keys2}")
+
     print(f"\nResult: {PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1
 

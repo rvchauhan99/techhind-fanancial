@@ -11,7 +11,10 @@ import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
 
-const emptyLine = () => ({ description: "", product_id: null, hsn_sac: "", qty: 1, unit: "Nos", rate: 0, discount: 0, tax_rate: 18 });
+const emptyLine = () => ({
+  description: "", product_id: null, hsn_sac: "", qty: 1, unit: "Nos",
+  rate: 0, discount: 0, tax_rate: 18, rate_includes_gst: false,
+});
 
 export default function InvoiceForm() {
   const { id } = useParams();
@@ -65,9 +68,14 @@ export default function InvoiceForm() {
   const totals = useMemo(() => {
     let taxable = 0, tax = 0;
     for (const l of lines) {
-      const t = Number(l.qty || 0) * Number(l.rate || 0) - Number(l.discount || 0);
+      const taxRate = Number(l.tax_rate || 0);
+      let rate = Number(l.rate || 0);
+      if (l.rate_includes_gst && taxRate > 0) {
+        rate = rate / (1 + taxRate / 100);
+      }
+      const t = Number(l.qty || 0) * rate - Number(l.discount || 0);
       taxable += t;
-      tax += zeroRated ? 0 : (t * Number(l.tax_rate || 0)) / 100;
+      tax += zeroRated ? 0 : (t * taxRate) / 100;
     }
     const raw = taxable + tax;
     const grand = Math.round(raw);
@@ -78,7 +86,11 @@ export default function InvoiceForm() {
 
   const pickProduct = (i, pid) => {
     const p = products.find((x) => x.id === pid);
-    if (p) setLine(i, { product_id: pid, description: p.name, hsn_sac: p.hsn_sac, rate: p.price, tax_rate: p.tax_rate, unit: p.unit });
+    if (p) setLine(i, {
+      product_id: pid, description: p.name, hsn_sac: p.hsn_sac, rate: p.price,
+      tax_rate: p.tax_rate, unit: p.unit,
+      rate_includes_gst: p.price_includes_gst !== false,
+    });
   };
 
   const submit = async (e) => {
@@ -90,7 +102,10 @@ export default function InvoiceForm() {
     setBusy(true);
     const payload = {
       doc_type: docType, customer_id: form.customer_id, invoice_date: form.invoice_date,
-      due_date: form.due_date || null, lines: lines.map((l) => ({ ...l, qty: Number(l.qty), rate: Number(l.rate), discount: Number(l.discount), tax_rate: Number(l.tax_rate) })),
+      due_date: form.due_date || null, lines: lines.map((l) => ({
+        ...l, qty: Number(l.qty), rate: Number(l.rate), discount: Number(l.discount),
+        tax_rate: Number(l.tax_rate), rate_includes_gst: !!l.rate_includes_gst,
+      })),
       is_export_sez: form.is_export_sez, lut_flag: form.lut_flag, reverse_charge: form.reverse_charge,
       pos_state_code: form.pos_state_code || null, pos_state: form.pos_state || null,
       pos_override_reason: form.pos_override_reason, reference_invoice_id: refInvoice,

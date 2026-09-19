@@ -23,10 +23,20 @@ def _bucket(days_overdue: int) -> str:
     return "90+"
 
 
-def _aging(docs, date_field):
-    t = today()
+def _aging(docs, date_field, as_of: str = "", q: str = "", bucket: str = "", min_balance=None):
+    try:
+        t = date.fromisoformat(as_of) if (as_of or "").strip() else today()
+    except Exception:
+        t = today()
     out = {b: {"amount": 0.0, "count": 0} for b in AR_BUCKETS}
     rows = []
+    ql = (q or "").strip().lower()
+    min_bal = None
+    if min_balance is not None and min_balance != "":
+        try:
+            min_bal = float(min_balance)
+        except (TypeError, ValueError):
+            min_bal = None
     for d in docs:
         try:
             due = date.fromisoformat(d.get("due_date") or d.get(date_field))
@@ -34,30 +44,40 @@ def _aging(docs, date_field):
             due = t
         days = (t - due).days
         b = _bucket(days)
-        out[b]["amount"] = r2(out[b]["amount"] + d.get("balance", 0))
+        party = d.get("party") or ""
+        if ql and ql not in party.lower() and ql not in (d.get("invoice_no") or d.get("bill_no") or "").lower():
+            continue
+        if bucket and b != bucket:
+            continue
+        bal = float(d.get("balance") or 0)
+        if min_bal is not None and bal < min_bal:
+            continue
+        out[b]["amount"] = r2(out[b]["amount"] + bal)
         out[b]["count"] += 1
         rows.append({**d, "days_overdue": days, "bucket": b})
-    return {"buckets": out, "rows": rows}
+    return {"buckets": out, "rows": rows, "as_of": t.isoformat()}
 
 
 @router.get("/aging/ar")
-async def ar_aging(user=Depends(require_roles(*ALL_ROLES))):
+async def ar_aging(as_of: str = "", q: str = "", bucket: str = "", min_balance: float = None,
+                   user=Depends(require_roles(*ALL_ROLES))):
     invs = await db.invoices.find(
         {"doc_type": "INV", "status": {"$in": ["approved", "partially_paid"]}, "balance": {"$gt": 0}},
         {"_id": 0}).to_list(2000)
     for i in invs:
         i["party"] = (i.get("customer_snapshot") or {}).get("legal_name", "")
-    return _aging(invs, "invoice_date")
+    return _aging(invs, "invoice_date", as_of=as_of, q=q, bucket=bucket, min_balance=min_balance)
 
 
 @router.get("/aging/ap")
-async def ap_aging(user=Depends(require_roles(*ALL_ROLES))):
+async def ap_aging(as_of: str = "", q: str = "", bucket: str = "", min_balance: float = None,
+                   user=Depends(require_roles(*ALL_ROLES))):
     bills = await db.purchase_bills.find(
         {"status": {"$in": ["posted", "partially_paid"]}, "balance": {"$gt": 0}},
         {"_id": 0}).to_list(2000)
     for b in bills:
         b["party"] = (b.get("vendor_snapshot") or {}).get("name", "")
-    return _aging(bills, "bill_date")
+    return _aging(bills, "bill_date", as_of=as_of, q=q, bucket=bucket, min_balance=min_balance)
 
 
 @router.get("/queue")
@@ -223,8 +243,15 @@ async def dashboard_summary(user=Depends(require_roles(*ALL_ROLES))):
 
 
 @router.get("/audit")
-async def audit_logs(entity_type: str = "", limit: int = 200, user=Depends(require_roles(*FINANCE_ROLES))):
-    flt = {"entity_type": entity_type} if entity_type else {}
+async def audit_logs(entity_type: str = "", action: str = "", q: str = "",
+                     date_from: str = "", date_to: str = "",
+                     limit: int = 200, user=Depends(require_roles(*FINANCE_ROLES))):
+    from list_query import apply_q, apply_date_range, apply_eq
+    flt = {}
+    apply_eq(flt, "entity_type", entity_type)
+    apply_eq(flt, "action", action)
+    apply_date_range(flt, "ts", date_from, date_to)
+    apply_q(flt, q, ["summary", "user_email", "user_name", "entity_id"])
     return await db.audit_logs.find(flt, {"_id": 0}).sort("ts", -1).to_list(min(limit, 500))
 
 

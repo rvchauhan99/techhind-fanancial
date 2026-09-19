@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { Plus, LifeBuoy } from "lucide-react"
 import { toast } from "sonner"
@@ -11,6 +11,8 @@ import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select"
+import FilterBar, { FIELD } from "../components/filters/FilterBar"
+import { useListFilters } from "../hooks/useListFilters"
 
 function SlaBadge({ ticket }) {
   if (!ticket?.sla_due_at) return <span className="text-[10px] text-slate-400">—</span>
@@ -48,21 +50,29 @@ const QUEUE_CHIPS = [
   { key: "breached", label: "SLA breached", params: { sla: "breached" } },
 ]
 
+const BASE_SCHEMA = [
+  { key: "q", type: FIELD.TEXT, label: "Search", placeholder: "Subject / #…", width: "w-40" },
+  { key: "status", type: FIELD.SELECT, label: "Status", width: "w-32",
+    options: ["open", "pending", "resolved", "closed"].map((s) => ({ value: s, label: s })) },
+  { key: "priority", type: FIELD.SELECT, label: "Priority", width: "w-28",
+    options: ["low", "normal", "high"].map((s) => ({ value: s, label: s })) },
+  { key: "category", type: FIELD.SELECT, label: "Category", width: "w-36", options: [] },
+  { key: "assignee_id", type: FIELD.SELECT, label: "Assignee", width: "w-40", options: [] },
+  { key: "customer_id", type: FIELD.SELECT, label: "Customer", width: "w-44", options: [] },
+  { key: "dates", type: FIELD.DATE_RANGE, label: "Created" },
+]
+
 export default function Tickets() {
-  const { canCap } = useAuth()
+  const { canCap, user } = useAuth()
   const navigate = useNavigate()
+  const isFreelancer = user?.role === "freelancer"
   const canWrite = canCap("can_ticket_write")
+  const canCreate = canWrite && !isFreelancer
   const [rows, setRows] = useState(null)
   const [queue, setQueue] = useState({})
   const [meta, setMeta] = useState({ categories: [], assignees: [] })
-  const [chip, setChip] = useState("open")
-  const [status, setStatus] = useState("all")
-  const [priority, setPriority] = useState("all")
-  const [category, setCategory] = useState("all")
-  const [assigneeId, setAssigneeId] = useState("all")
-  const [q, setQ] = useState("")
-  const [open, setOpen] = useState(false)
   const [customers, setCustomers] = useState([])
+  const [open, setOpen] = useState(false)
   const [form, setForm] = useState({
     customer_id: "",
     subject: "",
@@ -73,42 +83,58 @@ export default function Tickets() {
     requester_name: "",
     requester_email: "",
   })
+  const { values, setFilter, setMany, clearFilters, activeCount, apiParams } = useListFilters(BASE_SCHEMA, {
+    preserve: ["chip"],
+  })
+  const chip = values.chip || (isFreelancer ? "mine" : "open")
+  const queueChips = isFreelancer
+    ? QUEUE_CHIPS.filter((c) => c.key === "mine" || c.key === "breached")
+    : QUEUE_CHIPS
+
+  const schema = useMemo(() => {
+    let fields = BASE_SCHEMA
+    if (isFreelancer) {
+      fields = BASE_SCHEMA.filter((f) => f.key !== "assignee_id")
+    }
+    return fields.map((f) => {
+      if (f.key === "category") {
+        return { ...f, options: (meta.categories || []).map((c) => ({ value: c.key || c, label: c.label || c })) }
+      }
+      if (f.key === "assignee_id") {
+        return { ...f, options: (meta.assignees || []).map((a) => ({ value: a.id, label: a.name })) }
+      }
+      if (f.key === "customer_id") {
+        return { ...f, options: customers.map((c) => ({ value: c.id, label: c.legal_name })) }
+      }
+      return f
+    })
+  }, [meta, customers, isFreelancer])
 
   const loadQueue = useCallback(() => {
     api.get("/tickets/queue").then((r) => setQueue(r.data || {})).catch(() => {})
   }, [])
 
   const loadRows = useCallback(() => {
-    const params = {}
+    const params = { ...apiParams }
+    delete params.chip
     const chipDef = QUEUE_CHIPS.find((c) => c.key === chip)
-    if (chipDef) Object.assign(params, chipDef.params)
-    if (status !== "all" && chip === "open") params.status = status
-    if (status !== "all" && !["open", "mine", "unassigned"].includes(chip)) params.status = status
-    if (chip === "open" && status !== "all") params.status = status
-    if (priority !== "all") params.priority = priority
-    if (category !== "all") params.category = category
-    if (assigneeId !== "all" && chip !== "mine" && chip !== "unassigned") params.assignee_id = assigneeId
-    if (q.trim()) params.q = q.trim()
-    api
-      .get("/tickets", { params })
-      .then((r) => setRows(r.data))
-      .catch(() => setRows([]))
-  }, [chip, status, priority, category, assigneeId, q])
+    if (chipDef) {
+      Object.assign(params, chipDef.params)
+      // explicit status from FilterBar overrides chip default when set
+      if (apiParams.status) params.status = apiParams.status
+    }
+    api.get("/tickets", { params }).then((r) => setRows(r.data)).catch(() => setRows([]))
+  }, [apiParams, chip])
 
   useEffect(() => {
     api.get("/tickets/meta").then((r) => setMeta(r.data || {})).catch(() => {})
+    api.get("/customers").then((r) => setCustomers(r.data || [])).catch(() => {})
     loadQueue()
   }, [loadQueue])
 
   useEffect(() => {
     loadRows()
   }, [loadRows])
-
-  useEffect(() => {
-    if (open) {
-      api.get("/customers").then((r) => setCustomers(r.data || [])).catch(() => {})
-    }
-  }, [open])
 
   const handleCreate = async (e) => {
     e.preventDefault()
@@ -147,39 +173,27 @@ export default function Tickets() {
     <Layout
       title="Support Tickets"
       actions={
-        <div className="flex items-center gap-2">
-          <Input
-            data-testid="tickets-search"
-            className="h-8 w-40 text-xs"
-            placeholder="Search…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-          {canWrite && (
-            <Button
-              data-testid="new-ticket-btn"
-              size="sm"
-              onClick={() => setOpen(true)}
-              className="bg-[#0F284E] hover:bg-[#17386D] text-white"
-            >
-              <Plus className="w-4 h-4 mr-1" /> New Ticket
-            </Button>
-          )}
-        </div>
+        canCreate && (
+          <Button
+            data-testid="new-ticket-btn"
+            size="sm"
+            onClick={() => setOpen(true)}
+            className="bg-[#0F284E] hover:bg-[#17386D] text-white"
+          >
+            <Plus className="w-4 h-4 mr-1" /> New Ticket
+          </Button>
+        )
       }
     >
-      <div className="flex flex-wrap gap-1.5 mb-2" data-testid="tickets-queue-chips">
-        {QUEUE_CHIPS.map((c) => {
+      <div className="flex flex-wrap gap-1.5 mb-1" data-testid="tickets-queue-chips">
+        {queueChips.map((c) => {
           const n = chipCount(c.key)
           return (
             <button
               key={c.key}
               type="button"
               data-testid={`queue-chip-${c.key}`}
-              onClick={() => {
-                setChip(c.key)
-                if (c.key === "open") setStatus("open")
-              }}
+              onClick={() => setMany({ chip: c.key })}
               className={`h-7 px-2.5 rounded text-[11px] font-semibold border transition-colors ${
                 chip === c.key
                   ? "bg-[#0F284E] text-white border-[#0F284E]"
@@ -193,57 +207,8 @@ export default function Tickets() {
         })}
       </div>
 
-      <div className="flex flex-wrap gap-1.5 mb-2" data-testid="tickets-filters">
-        <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger className="h-7 w-28 text-[11px]" data-testid="tickets-status-filter">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All status</SelectItem>
-            <SelectItem value="open">Open</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="resolved">Resolved</SelectItem>
-            <SelectItem value="closed">Closed</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={priority} onValueChange={setPriority}>
-          <SelectTrigger className="h-7 w-28 text-[11px]" data-testid="tickets-priority-filter">
-            <SelectValue placeholder="Priority" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All priority</SelectItem>
-            <SelectItem value="low">Low</SelectItem>
-            <SelectItem value="normal">Normal</SelectItem>
-            <SelectItem value="high">High</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={category} onValueChange={setCategory}>
-          <SelectTrigger className="h-7 w-32 text-[11px]" data-testid="tickets-category-filter">
-            <SelectValue placeholder="Category" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All categories</SelectItem>
-            {(meta.categories || []).map((c) => (
-              <SelectItem key={c} value={c} className="capitalize">
-                {c}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={assigneeId} onValueChange={setAssigneeId}>
-          <SelectTrigger className="h-7 w-36 text-[11px]" data-testid="tickets-assignee-filter">
-            <SelectValue placeholder="Assignee" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All assignees</SelectItem>
-            {(meta.assignees || []).map((a) => (
-              <SelectItem key={a.id} value={a.id}>
-                {a.name || a.email}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <FilterBar schema={schema} values={values} setFilter={setFilter}
+        clearFilters={clearFilters} activeCount={activeCount} testId="tickets-filters" />
 
       <div className="bg-white border border-slate-200 rounded-lg" data-testid="tickets-table">
         <table className="w-full text-sm">

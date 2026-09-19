@@ -113,19 +113,45 @@ class UserIn(BaseModel):
     role: str
 
 
+def _user_public(doc: dict) -> dict:
+    """Strip secrets and add first_login alias for UI."""
+    out = {k: v for k, v in doc.items() if k not in ("password_hash", "totp_secret", "totp_pending_secret", "_id")}
+    out["must_change_password"] = bool(out.get("must_change_password"))
+    out["first_login"] = out["must_change_password"]
+    return out
+
+
 @router.get("/users")
 async def list_users(
     active_only: bool = False,
+    q: str = "",
+    role: str = "",
+    active: str = "",
+    first_login: str = "",
     user=Depends(require_roles(*ALL_ROLES)),
 ):
     """Any authenticated user may list users (assignee pickers). Full fields for all."""
+    from list_query import apply_q, apply_eq
     filt: dict = {}
     if active_only:
         filt["active"] = {"$ne": False}
-    return await db.users.find(
+    v = (active or "").strip().lower()
+    if v in ("1", "true", "yes"):
+        filt["active"] = True
+    elif v in ("0", "false", "no"):
+        filt["active"] = {"$ne": True}
+    fl = (first_login or "").strip().lower()
+    if fl in ("1", "true", "yes", "pending"):
+        filt["must_change_password"] = True
+    elif fl in ("0", "false", "no", "done"):
+        filt["must_change_password"] = {"$ne": True}
+    apply_eq(filt, "role", role)
+    apply_q(filt, q, ["name", "email"])
+    rows = await db.users.find(
         filt,
         {"_id": 0, "password_hash": 0, "totp_secret": 0, "totp_pending_secret": 0},
     ).sort("name", 1).to_list(500)
+    return [_user_public(r) for r in rows]
 
 
 @router.post("/users")
@@ -135,14 +161,16 @@ async def create_user(body: UserIn, user=Depends(require_roles(*ADMIN_ROLES))):
         raise HTTPException(status_code=400, detail="Invalid role")
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=409, detail="Email already exists")
-    doc = {"id": new_id(), "name": body.name, "email": email, "role": body.role,
-           "password_hash": hash_password(body.password), "active": True,
-           "totp_enabled": False, "created_at": iso_now()}
+    if len(body.password or "") < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    doc = {
+        "id": new_id(), "name": body.name, "email": email, "role": body.role,
+        "password_hash": hash_password(body.password), "active": True,
+        "totp_enabled": False, "must_change_password": True, "created_at": iso_now(),
+    }
     await db.users.insert_one(doc)
     await audit(user, "user_created", "user", doc["id"], f"User {email} created with role {body.role}")
-    doc.pop("password_hash")
-    doc.pop("_id", None)
-    return doc
+    return _user_public(doc)
 
 
 @router.patch("/users/{user_id}")
@@ -164,11 +192,21 @@ async def reset_password(user_id: str, body: dict, user=Depends(require_roles(*A
     pw = body.get("password", "")
     if len(pw) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
-    res = await db.users.update_one({"id": user_id}, {"$set": {"password_hash": hash_password(pw)}})
+    res = await db.users.update_one(
+        {"id": user_id},
+        {
+            "$set": {
+                "password_hash": hash_password(pw),
+                "must_change_password": True,
+                "totp_enabled": False,
+            },
+            "$unset": {"totp_secret": "", "totp_pending_secret": ""},
+        },
+    )
     if not res.matched_count:
         raise HTTPException(status_code=404, detail="User not found")
-    await audit(user, "password_reset", "user", user_id, "Password reset by admin")
-    return {"ok": True}
+    await audit(user, "password_reset", "user", user_id, "Password reset by admin — must change on next login")
+    return {"ok": True, "must_change_password": True}
 
 
 # ---------- Files ----------

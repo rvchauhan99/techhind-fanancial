@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Plus, Download, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import api, { apiError, pdfUrl } from "../lib/api";
@@ -10,8 +10,21 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import FilterBar, { FIELD } from "../components/filters/FilterBar";
+import { useListFilters } from "../hooks/useListFilters";
 
 const METHODS = { upi: "UPI", neft: "NEFT", rtgs: "RTGS", cheque: "Cheque", cash: "Cash", card: "Card" };
+
+const BASE_SCHEMA = [
+  { key: "q", type: FIELD.TEXT, label: "Search", placeholder: "Receipt / customer / ref…", width: "w-44" },
+  { key: "dates", type: FIELD.DATE_RANGE, label: "Payment date" },
+  { key: "customer_id", type: FIELD.SELECT, label: "Customer", width: "w-48", options: [] },
+  { key: "method", type: FIELD.SELECT, label: "Method", width: "w-32",
+    options: Object.entries(METHODS).map(([v, l]) => ({ value: v, label: l })) },
+  { key: "bank_id", type: FIELD.SELECT, label: "Bank", width: "w-40", options: [] },
+  { key: "amount", type: FIELD.NUMBER_RANGE, label: "Amount", minKey: "min_amount", maxKey: "max_amount" },
+  { key: "has_tds", type: FIELD.TOGGLE, label: "TDS", placeholder: "Has TDS" },
+];
 
 export default function Payments() {
   const { can } = useAuth();
@@ -23,12 +36,19 @@ export default function Payments() {
     amount: "", tds_amount: "", method: "upi", reference_no: "", notes: "", bank_id: "" });
   const [allocs, setAllocs] = useState({});
   const [banks, setBanks] = useState([]);
+  const { values, setFilter, clearFilters, activeCount, apiParams } = useListFilters(BASE_SCHEMA);
 
-  const load = () => api.get("/payments").then((r) => setRows(r.data)).catch(() => {});
+  const schema = useMemo(() => BASE_SCHEMA.map((f) => {
+    if (f.key === "customer_id") return { ...f, options: customers.map((c) => ({ value: c.id, label: c.legal_name })) };
+    if (f.key === "bank_id") return { ...f, options: banks.map((b) => ({ value: b.id, label: b.bank_name || b.label })) };
+    return f;
+  }), [customers, banks]);
+
+  const load = () => api.get("/payments", { params: apiParams }).then((r) => setRows(Array.isArray(r.data) ? r.data : r.data?.items || [])).catch(() => {});
+  useEffect(() => { load(); }, [apiParams]); // eslint-disable-line
   useEffect(() => {
-    load();
     api.get("/customers").then((r) => setCustomers(r.data)).catch(() => {});
-    api.get("/banks").then((r) => {
+    api.get("/banks", { params: { active_only: false } }).then((r) => {
       setBanks(r.data || []);
       const primary = (r.data || []).find((b) => b.primary) || (r.data || []).find((b) => b.account_type === "bank");
       if (primary) setForm((f) => ({ ...f, bank_id: f.bank_id || primary.id }));
@@ -86,6 +106,8 @@ export default function Payments() {
       actions={can("admin", "accountant", "ops") && (
         <Button data-testid="record-payment-btn" size="sm" onClick={() => setOpen(true)}
           className="bg-[#0F284E] hover:bg-[#17386D] text-white"><Plus className="w-4 h-4 mr-1" /> Record Payment</Button>)}>
+      <FilterBar schema={schema} values={values} setFilter={setFilter}
+        clearFilters={clearFilters} activeCount={activeCount} testId="payment-filters" />
       <div className="bg-white border border-slate-200 rounded-lg">
         <table className="w-full text-sm" data-testid="payments-table">
           <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
@@ -103,7 +125,6 @@ export default function Payments() {
                 <td className="px-3 py-2 text-xs">{METHODS[p.method] || p.method}</td>
                 <td className="px-3 py-2 font-mono text-xs">{p.reference_no || "—"}</td>
                 <td className="px-3 py-2 text-right font-mono font-semibold">{fmtINR(p.amount)}</td>
-                {p.tds_amount > 0 && <td className="hidden"></td>}
                 <td className="px-3 py-2 text-xs font-mono">{(p.allocations || []).map((a) => a.invoice_no).join(", ") || "—"}
                   {p.tds_amount > 0 && <span className="block text-[10px] text-slate-400">TDS {fmtINR(p.tds_amount)}</span>}</td>
                 <td className="px-3 py-2 text-right font-mono">{p.unallocated > 0 ? <span className="text-amber-700 font-semibold">{fmtINR(p.unallocated)}</span> : "—"}</td>
@@ -133,51 +154,47 @@ export default function Payments() {
                 </Select></div>
               <div><Label>Date *</Label>
                 <Input data-testid="payment-date-input" type="date" required value={form.payment_date} onChange={(e) => setForm({ ...form, payment_date: e.target.value })} /></div>
-              <div><Label>Amount received (₹) *</Label>
-                <Input data-testid="payment-amount-input" type="number" step="0.01" required value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="font-mono" /></div>
-              <div><Label>TDS deducted by customer (₹)</Label>
-                <Input data-testid="payment-tds-input" type="number" step="0.01" value={form.tds_amount} onChange={(e) => setForm({ ...form, tds_amount: e.target.value })} className="font-mono" placeholder="0.00" /></div>
               <div><Label>Method</Label>
                 <Select value={form.method} onValueChange={(v) => setForm({ ...form, method: v })}>
                   <SelectTrigger data-testid="payment-method-select"><SelectValue /></SelectTrigger>
                   <SelectContent className="bg-white">{Object.entries(METHODS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
                 </Select></div>
-              <div><Label>Bank / Cash *</Label>
-                <Select value={form.bank_id} onValueChange={(v) => setForm({ ...form, bank_id: v })}
-                  disabled={form.method === "cash"}>
+              <div><Label>Amount (cash) *</Label>
+                <Input data-testid="payment-amount-input" type="number" step="0.01" required value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="font-mono" /></div>
+              <div><Label>TDS amount</Label>
+                <Input data-testid="payment-tds-input" type="number" step="0.01" value={form.tds_amount} onChange={(e) => setForm({ ...form, tds_amount: e.target.value })} className="font-mono" /></div>
+              <div><Label>Bank / Cash account</Label>
+                <Select value={form.bank_id} onValueChange={(v) => setForm({ ...form, bank_id: v })}>
                   <SelectTrigger data-testid="payment-bank-select"><SelectValue placeholder="Select account" /></SelectTrigger>
-                  <SelectContent className="bg-white">
-                    {banks.map((b) => <SelectItem key={b.id} value={b.id}>{b.label || b.bank_name}</SelectItem>)}
-                  </SelectContent>
+                  <SelectContent className="bg-white">{banks.map((b) => <SelectItem key={b.id} value={b.id}>{b.label || b.bank_name}</SelectItem>)}</SelectContent>
                 </Select></div>
-              <div><Label>Reference (UTR/UPI/cheque no)</Label>
-                <Input data-testid="payment-ref-input" value={form.reference_no} onChange={(e) => setForm({ ...form, reference_no: e.target.value })} className="font-mono" /></div>
+              <div className="col-span-2"><Label>Reference</Label>
+                <Input data-testid="payment-ref-input" value={form.reference_no} onChange={(e) => setForm({ ...form, reference_no: e.target.value })} /></div>
             </div>
             {openInvoices.length > 0 && (
-              <div className="border border-slate-200 rounded-md" data-testid="allocation-table">
-                <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-                  Allocate to open invoices (leave blank to skip)</div>
-                {openInvoices.map((i) => (
-                  <div key={i.id} className="flex items-center gap-3 px-3 py-2 border-b border-slate-100 last:border-0 text-sm">
-                    <span className="font-mono text-xs w-36">{i.invoice_no}</span>
-                    <span className="text-xs text-slate-500 flex-1">due {fmtDate(i.due_date)}</span>
-                    <span className="font-mono text-xs w-28 text-right">bal {fmtINR(i.balance)}</span>
-                    <Input data-testid={`alloc-${i.id}`} type="number" step="0.01" max={i.balance} placeholder="0.00"
-                      value={allocs[i.id] || ""} onChange={(e) => setAllocs({ ...allocs, [i.id]: e.target.value })}
-                      className="w-28 h-8 text-right font-mono" />
-                    <button type="button" data-testid={`alloc-full-${i.id}`} onClick={() => setAllocs({ ...allocs, [i.id]: i.balance })}
-                      className="text-[10px] font-semibold text-[#0066CC] hover:underline">FULL</button>
-                  </div>
-                ))}
+              <div className="border border-slate-200 rounded-md overflow-hidden">
+                <div className="px-3 py-1.5 bg-slate-50 text-[11px] font-semibold uppercase text-slate-600">Allocate to open invoices (optional)</div>
+                <table className="w-full text-xs">
+                  <thead><tr className="bg-slate-100 text-[10px] uppercase"><th className="text-left px-2 py-1">Invoice</th><th className="text-right px-2 py-1">Balance</th><th className="text-right px-2 py-1">Allocate</th></tr></thead>
+                  <tbody>
+                    {openInvoices.map((inv) => (
+                      <tr key={inv.id} className="border-t border-slate-100">
+                        <td className="px-2 py-1 font-mono">{inv.invoice_no}</td>
+                        <td className="px-2 py-1 text-right font-mono">{fmtINR(inv.balance)}</td>
+                        <td className="px-2 py-1 text-right">
+                          <Input type="number" step="0.01" className="h-7 w-28 ml-auto font-mono text-xs"
+                            value={allocs[inv.id] || ""} onChange={(e) => setAllocs({ ...allocs, [inv.id]: e.target.value })} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="px-3 py-1.5 text-[11px] text-slate-500">Allocated {fmtINR(totalAlloc)}</div>
               </div>
             )}
-            {form.customer_id && !openInvoices.length && (
-              <div className="text-xs text-slate-500 border border-slate-200 rounded-md px-3 py-2">No open invoices — payment will be recorded as unallocated advance.</div>)}
-            <div className="flex items-center justify-between text-sm pt-1">
-              <span className={totalAlloc > Number(form.amount || 0) + Number(form.tds_amount || 0) ? "text-red-600 font-semibold" : "text-slate-600"} data-testid="alloc-summary">
-                Allocated {fmtINR(totalAlloc)} of {fmtINR(Number(form.amount || 0) + Number(form.tds_amount || 0))} (incl. TDS {fmtINR(form.tds_amount || 0)}) · Unallocated {fmtINR(Math.max(Number(form.amount || 0) + Number(form.tds_amount || 0) - totalAlloc, 0))}</span>
-              <Button data-testid="payment-save-btn" type="submit" disabled={!form.customer_id || !form.amount || !form.bank_id || totalAlloc > Number(form.amount || 0) + Number(form.tds_amount || 0)}
-                className="bg-[#0F284E] hover:bg-[#17386D] text-white">Record Payment</Button>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+              <Button data-testid="payment-save-btn" type="submit" disabled={!form.customer_id || !form.amount}
+                className="bg-[#0F284E] hover:bg-[#17386D] text-white">Save receipt</Button>
             </div>
           </form>
         </DialogContent>

@@ -82,6 +82,7 @@ const ROLE_BADGE = {
   sales: "bg-amber-500/15 text-amber-300 border-amber-400/30",
   support_agent: "bg-teal-500/15 text-teal-300 border-teal-400/30",
   hr: "bg-slate-500/15 text-slate-300 border-slate-400/30",
+  freelancer: "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-400/30",
 }
 
 function buildNavFromMenus(menus) {
@@ -211,15 +212,23 @@ export default function Layout({ children, title, actions }) {
         </nav>
         <div className="p-3 border-t border-slate-800">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white">
-              {(user?.name || "?").split(" ").map((x) => x[0]).slice(0, 2).join("")}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-semibold text-white truncate" data-testid="user-name">{user?.name}</div>
-              <span className={`text-[10px] font-semibold uppercase tracking-wider border rounded px-1.5 py-px ${ROLE_BADGE[user?.role] || "bg-slate-500/15 text-slate-300 border-slate-400/30"}`} data-testid="user-role-badge">
-                {user?.role}
-              </span>
-            </div>
+            <button
+              type="button"
+              data-testid="nav-profile"
+              onClick={() => navigate("/profile")}
+              className="flex items-center gap-2.5 flex-1 min-w-0 text-left rounded hover:bg-slate-800/70 p-0.5 -m-0.5 transition-colors"
+              title="My profile"
+            >
+              <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white">
+                {(user?.name || "?").split(" ").map((x) => x[0]).slice(0, 2).join("")}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-semibold text-white truncate" data-testid="user-name">{user?.name}</div>
+                <span className={`text-[10px] font-semibold uppercase tracking-wider border rounded px-1.5 py-px ${ROLE_BADGE[user?.role] || "bg-slate-500/15 text-slate-300 border-slate-400/30"}`} data-testid="user-role-badge">
+                  {user?.role}
+                </span>
+              </div>
+            </button>
             <button data-testid="logout-btn" onClick={async () => { await logout(); navigate("/login") }}
               className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors" title="Sign out">
               <LogOut className="w-4 h-4" />

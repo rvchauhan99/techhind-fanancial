@@ -1,14 +1,18 @@
 from datetime import timedelta
 from typing import Optional
+import base64
+import io
 
 import pyotp
 import jwt
+import qrcode
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from core import (db, get_current_user, verify_password, hash_password, create_access_token,
                   create_refresh_token, set_auth_cookies, utcnow, iso_now, audit,
-                  require_roles, ALL_ROLES, is_refresh_revoked, revoke_refresh_jti)
+                  require_roles, ALL_ROLES, is_refresh_revoked, revoke_refresh_jti,
+                  public_user)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -24,6 +28,19 @@ class LoginIn(BaseModel):
 
 class OtpIn(BaseModel):
     otp: str
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
+def _qr_data_url(uri: str) -> str:
+    img = qrcode.make(uri)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{b64}"
 
 
 @router.post("/login")
@@ -50,9 +67,10 @@ async def login(body: LoginIn, request: Request, response: Response):
             raise HTTPException(status_code=401, detail="Invalid 2FA code")
     await db.login_attempts.delete_one({"identifier": ident})
     access = set_auth_cookies(response, user)
-    safe = {k: v for k, v in user.items() if k not in ("password_hash", "totp_secret", "totp_pending_secret")}
+    safe = public_user(user)
     await audit(safe, "login", "user", user["id"], f"{user['name']} logged in")
-    return {"requires_2fa": False, "user": safe, "access_token": access}
+    return {"requires_2fa": False, "user": safe, "access_token": access,
+            "must_change_password": safe["must_change_password"]}
 
 
 @router.post("/logout")
@@ -78,7 +96,27 @@ async def logout(request: Request, response: Response):
 
 @router.get("/me")
 async def me(user=Depends(get_current_user)):
-    return user
+    return public_user(user)
+
+
+@router.post("/change-password")
+async def change_password(body: ChangePasswordIn, user=Depends(get_current_user)):
+    new_pw = (body.new_password or "").strip()
+    if len(new_pw) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    doc = await db.users.find_one({"id": user["id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not verify_password(body.current_password, doc["password_hash"]):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if verify_password(new_pw, doc["password_hash"]):
+        raise HTTPException(status_code=400, detail="New password must be different from current password")
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"password_hash": hash_password(new_pw), "must_change_password": False}},
+    )
+    await audit(user, "password_changed", "user", user["id"], f"{user['name']} changed password")
+    return {"ok": True, "must_change_password": False}
 
 
 @router.post("/refresh")
@@ -111,7 +149,7 @@ async def refresh(request: Request, response: Response):
     exp_dt = datetime.fromtimestamp(exp, tz=timezone.utc) if isinstance(exp, (int, float)) else utcnow()
     await revoke_refresh_jti(jti, exp_dt)
     access = set_auth_cookies(response, user)
-    safe = {k: v for k, v in user.items() if k not in ("password_hash", "totp_secret", "totp_pending_secret")}
+    safe = public_user(user)
     return {"access_token": access, "user": safe}
 
 
@@ -120,7 +158,11 @@ async def twofa_setup(user=Depends(require_roles(*ALL_ROLES))):
     secret = pyotp.random_base32()
     await db.users.update_one({"id": user["id"]}, {"$set": {"totp_pending_secret": secret}})
     uri = pyotp.TOTP(secret).provisioning_uri(name=user["email"], issuer_name="TechHind Finance")
-    return {"secret": secret, "provisioning_uri": uri}
+    return {
+        "secret": secret,
+        "provisioning_uri": uri,
+        "qr_data_url": _qr_data_url(uri),
+    }
 
 
 @router.post("/2fa/enable")

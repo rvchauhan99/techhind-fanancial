@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { Plus } from "lucide-react"
 import { toast } from "sonner"
@@ -11,13 +11,21 @@ import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select"
+import FilterBar, { FIELD } from "../components/filters/FilterBar"
+import { useListFilters } from "../hooks/useListFilters"
+
+const BASE_SCHEMA = [
+  { key: "q", type: FIELD.TEXT, label: "Search", placeholder: "Name…", width: "w-40" },
+  { key: "status", type: FIELD.SELECT, label: "Status", width: "w-36",
+    options: ["planned", "active", "on_hold", "completed", "cancelled"].map((s) => ({ value: s, label: s })) },
+  { key: "customer_id", type: FIELD.SELECT, label: "Customer", width: "w-48", options: [] },
+  { key: "dates", type: FIELD.DATE_RANGE, label: "Due date" },
+]
 
 export default function Projects() {
   const { canCap } = useAuth()
   const navigate = useNavigate()
   const [rows, setRows] = useState(null)
-  const [status, setStatus] = useState("all")
-  const [q, setQ] = useState("")
   const [open, setOpen] = useState(false)
   const [customers, setCustomers] = useState([])
   const [users, setUsers] = useState([])
@@ -25,19 +33,25 @@ export default function Projects() {
     name: "", description: "", status: "planned", priority: "normal",
     customer_id: "", owner_id: "", due_date: "",
   })
+  const { values, setFilter, clearFilters, activeCount, apiParams } = useListFilters(BASE_SCHEMA)
+
+  const schema = useMemo(() => BASE_SCHEMA.map((f) => {
+    if (f.key !== "customer_id") return f
+    return { ...f, options: customers.map((c) => ({ value: c.id, label: c.legal_name })) }
+  }), [customers])
 
   const load = () => {
-    const params = {}
-    if (status !== "all") params.status = status
-    if (q.trim()) params.q = q.trim()
-    api.get("/work/projects", { params }).then((r) => setRows(r.data)).catch(() => setRows([]))
+    api.get("/work/projects", { params: apiParams }).then((r) => setRows(r.data)).catch(() => setRows([]))
   }
 
-  useEffect(() => { load() }, [status])
+  useEffect(() => { load() }, [apiParams]) // eslint-disable-line
+
+  useEffect(() => {
+    api.get("/customers").then((r) => setCustomers(r.data || [])).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!open) return
-    api.get("/customers").then((r) => setCustomers(r.data || [])).catch(() => {})
     api.get("/users", { params: { active_only: true } }).then((r) => setUsers(r.data || [])).catch(() => {})
   }, [open])
 
@@ -63,28 +77,16 @@ export default function Projects() {
     <Layout
       title="Projects"
       actions={
-        <div className="flex items-center gap-2">
-          <Input data-testid="projects-search" className="h-8 w-44 text-xs" placeholder="Search…"
-            value={q} onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") load() }} />
-          <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="h-8 w-32 text-xs" data-testid="projects-status-filter"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              {["planned", "active", "on_hold", "completed", "cancelled"].map((s) => (
-                <SelectItem key={s} value={s}>{s}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {canCap("can_work_write") && (
-            <Button size="sm" data-testid="new-project-btn" onClick={() => setOpen(true)}
-              className="bg-[#0F284E] hover:bg-[#17386D] text-white h-8">
-              <Plus className="w-3.5 h-3.5 mr-1" /> New
-            </Button>
-          )}
-        </div>
+        canCap("can_work_write") && (
+          <Button size="sm" data-testid="new-project-btn" onClick={() => setOpen(true)}
+            className="bg-[#0F284E] hover:bg-[#17386D] text-white">
+            <Plus className="w-4 h-4 mr-1" /> New Project
+          </Button>
+        )
       }
     >
+      <FilterBar schema={schema} values={values} setFilter={setFilter}
+        clearFilters={clearFilters} activeCount={activeCount} testId="project-filters" />
       <div className="bg-white border border-slate-200 rounded-lg" data-testid="projects-table">
         <table className="w-full text-sm">
           <thead>

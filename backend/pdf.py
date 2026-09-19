@@ -219,6 +219,113 @@ def render_receipt_html(payment: dict, company: dict, customer: dict, allocation
     return html
 
 
+def _doc_header(company: dict, title: str) -> str:
+    brand = company.get("brand", {}).get("primary") or "#0F284E"
+    css = CSS.replace("BRAND", brand)
+    logo = _logo_b64(company)
+    logo_html = f'<img src="{logo}" style="max-height:52px;max-width:160px;" />' if logo else ""
+    return css, f"""<div class="header">
+  <div>{logo_html}<div class="brand-name">{_esc(company.get('legal_name',''))}</div>
+  <div class="brand-meta">{_esc(company.get('address',''))}<br/>GSTIN: <b>{_esc(company.get('gstin',''))}</b> | {_esc(company.get('email',''))} | {_esc(company.get('phone',''))}</div></div>
+  <div class="doc-title"><h1>{_esc(title)}</h1><div class="badge">GSTIN: {_esc(company.get('gstin',''))}</div></div>
+</div>"""
+
+
+def render_voucher_html(voucher: dict, company: dict) -> str:
+    css, header = _doc_header(company, "Expense Voucher")
+    total = voucher.get("total") or 0
+    html = f"""<html><head><style>{css}</style></head><body>
+{header}
+<table class="meta"><tr>
+  <td><div class="lbl">Voucher No</div><b>{_esc(voucher.get('voucher_no') or 'DRAFT')}</b></td>
+  <td><div class="lbl">Date</div>{_esc(voucher.get('voucher_date',''))}</td>
+  <td><div class="lbl">Status</div>{_esc((voucher.get('status') or '').replace('_', ' ').title())}</td>
+  <td><div class="lbl">Type</div>{_esc(voucher.get('type') or 'expense')}</td>
+</tr></table>
+<table class="meta"><tr>
+  <td><div class="lbl">Category</div><b>{_esc(voucher.get('category',''))}</b></td>
+  <td><div class="lbl">Payee / Vendor</div>{_esc(voucher.get('vendor_name') or '—')}</td>
+  <td><div class="lbl">Paid Via</div>{_esc(voucher.get('paid_via') or '—')}</td>
+</tr></table>
+<div class="section-h">Narration</div>
+<table class="meta"><tr><td>{_esc(voucher.get('narration',''))}</td></tr></table>
+<table class="totals" style="width:42%;margin-left:auto;margin-top:12px">
+<tr><td>Amount</td><td class="num">{inr(voucher.get('amount',0))}</td></tr>
+<tr><td>Tax ({voucher.get('tax_rate',0)}%)</td><td class="num">{inr(voucher.get('tax_amount',0))}</td></tr>
+<tr class="grand"><td>Total</td><td class="num">₹ {inr(total)}</td></tr>
+</table>
+<div class="words" style="margin-top:10px"><b>Amount in words:</b> {in_words(total)}</div>
+{('<div class="section-h">Attachments</div><table class="lines"><tr><th>File</th></tr>'
+  + ''.join(f'<tr><td>{_esc(a.get("name",""))}</td></tr>' for a in (voucher.get("attachments") or []))
+  + '</table>') if voucher.get('attachments') else ''}
+{_signatory_html(company)}
+<div class="foot">Computer generated expense voucher — TechHind Company Finance.
+{('Approved: ' + _esc(voucher.get('approved_at',''))) if voucher.get('approved_at') else ''}</div>
+</body></html>"""
+    return html
+
+
+def render_bill_html(bill: dict, company: dict) -> str:
+    css, header = _doc_header(company, "Purchase Bill")
+    vendor = bill.get("vendor_snapshot") or {}
+    rows = ""
+    for i, l in enumerate(bill.get("lines") or [], 1):
+        rows += (f"<tr><td>{i}</td><td>{_esc(l.get('description',''))}</td><td>{_esc(l.get('hsn_sac',''))}</td>"
+                 f"<td class='num'>{inr(l.get('qty',0))}</td><td class='num'>{inr(l.get('rate',0))}</td>"
+                 f"<td class='num'>{l.get('tax_rate',0)}%</td><td class='num'>{inr(l.get('taxable') or l.get('qty',0)*l.get('rate',0))}</td>"
+                 f"<td class='num'>{inr(l.get('total') or 0)}</td></tr>")
+    html = f"""<html><head><style>{css}</style></head><body>
+{header}
+<table class="meta"><tr>
+  <td><div class="lbl">Bill No</div><b>{_esc(bill.get('bill_no',''))}</b></td>
+  <td><div class="lbl">Date</div>{_esc(bill.get('bill_date',''))}</td>
+  <td><div class="lbl">Due</div>{_esc(bill.get('due_date') or '—')}</td>
+  <td><div class="lbl">Status</div>{_esc(bill.get('status',''))}</td>
+  <td><div class="lbl">ITC</div>{'Eligible' if bill.get('itc_eligible') else 'Blocked'}</td>
+</tr></table>
+<div class="section-h">Vendor</div>
+<table class="meta"><tr><td><b>{_esc(vendor.get('name',''))}</b><br/>{_esc(vendor.get('address',''))}<br/>
+GSTIN: {_esc(vendor.get('gstin') or 'Unregistered')} | State: {_esc(vendor.get('state',''))} ({_esc(vendor.get('state_code',''))})</td></tr></table>
+<table class="lines"><tr><th>#</th><th>Description</th><th>HSN</th><th class="num">Qty</th><th class="num">Rate</th>
+<th class="num">GST%</th><th class="num">Taxable</th><th class="num">Total</th></tr>{rows or '<tr><td colspan="8">No lines</td></tr>'}</table>
+<table class="totals" style="width:42%;margin-left:auto">
+<tr><td>Taxable</td><td class="num">{inr(bill.get('total_taxable',0))}</td></tr>
+<tr><td>GST</td><td class="num">{inr(bill.get('total_tax',0))}</td></tr>
+<tr class="grand"><td>Grand Total</td><td class="num">₹ {inr(bill.get('grand_total',0))}</td></tr>
+<tr><td>Balance</td><td class="num">{inr(bill.get('balance',0))}</td></tr>
+</table>
+<div class="words"><b>Amount in words:</b> {in_words(bill.get('grand_total',0))}</div>
+{_signatory_html(company)}
+<div class="foot">Computer generated purchase bill record — for internal / CA use.</div>
+</body></html>"""
+    return html
+
+
+def render_vendor_payment_html(payment: dict, company: dict) -> str:
+    css, header = _doc_header(company, "Vendor Payment Advice")
+    rows = ""
+    for a in payment.get("allocations") or []:
+        rows += (f"<tr><td>{_esc(a.get('bill_no',''))}</td><td class='num'>{inr(a.get('amount',0))}</td></tr>")
+    html = f"""<html><head><style>{css}</style></head><body>
+{header}
+<table class="meta"><tr>
+  <td><div class="lbl">Payment Ref</div><b>{_esc(payment.get('payment_ref',''))}</b></td>
+  <td><div class="lbl">Date</div>{_esc(payment.get('payment_date',''))}</td>
+  <td><div class="lbl">Method</div>{_esc(payment.get('method',''))}</td>
+  <td><div class="lbl">Bank Ref</div>{_esc(payment.get('reference_no') or '—')}</td>
+</tr></table>
+<div class="section-h">Paid To</div>
+<table class="meta"><tr><td><b>{_esc(payment.get('vendor_name',''))}</b></td></tr></table>
+<div class="section-h">Allocated Against Bills</div>
+<table class="lines"><tr><th>Bill No</th><th class="num">Amount (INR)</th></tr>
+{rows or '<tr><td colspan="2">Unallocated</td></tr>'}</table>
+<div class="words" style="margin-top:10px"><b>Amount paid:</b> ₹ {inr(payment.get('amount',0))} ({in_words(payment.get('amount',0))})</div>
+{_signatory_html(company)}
+<div class="foot">Computer generated vendor payment advice — TechHind Company Finance.</div>
+</body></html>"""
+    return html
+
+
 async def build_pdf(html: str) -> bytes:
     import os
     from pathlib import Path

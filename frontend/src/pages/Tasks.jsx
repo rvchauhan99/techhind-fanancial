@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react"
-import { useNavigate, useSearchParams } from "react-router-dom"
+import { useNavigate } from "react-router-dom"
 import { Plus, LayoutList, Columns3, CalendarClock } from "lucide-react"
 import { toast } from "sonner"
 import api, { apiError } from "../lib/api"
@@ -12,6 +12,8 @@ import { Label } from "../components/ui/label"
 import { Switch } from "../components/ui/switch"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select"
+import FilterBar, { FIELD } from "../components/filters/FilterBar"
+import { useListFilters } from "../hooks/useListFilters"
 
 const STATUSES = ["backlog", "todo", "in_progress", "in_review", "blocked", "done", "cancelled"]
 const KANBAN = ["backlog", "todo", "in_progress", "in_review", "blocked", "done"]
@@ -34,36 +36,56 @@ const emptyForm = (userId) => ({
   quick_testing: false,
 })
 
+const BASE_SCHEMA = [
+  { key: "q", type: FIELD.TEXT, label: "Search", placeholder: "Title…", width: "w-36" },
+  { key: "status", type: FIELD.SELECT, label: "Status", width: "w-32",
+    options: STATUSES.map((s) => ({ value: s, label: s })) },
+  { key: "task_type", type: FIELD.SELECT, label: "Type", width: "w-36",
+    options: TYPES.map((t) => ({ value: t, label: t })) },
+  { key: "mine", type: FIELD.TOGGLE, label: "Mine", placeholder: "Assigned to me" },
+  { key: "overdue", type: FIELD.TOGGLE, label: "Overdue", placeholder: "Overdue" },
+  { key: "project_id", type: FIELD.SELECT, label: "Project", width: "w-40", options: [] },
+  { key: "assignee_id", type: FIELD.SELECT, label: "Assignee", width: "w-40", options: [] },
+  { key: "dates", type: FIELD.DATE_RANGE, label: "Due", fromKey: "date_from", toKey: "date_to" },
+]
+
 export default function Tasks() {
   const { canCap, user } = useAuth()
+  const isFreelancer = user?.role === "freelancer"
+  const canCreate = canCap("can_work_write") && !isFreelancer
   const navigate = useNavigate()
-  const [params, setParams] = useSearchParams()
-  const view = params.get("view") || "list"
-
   const [rows, setRows] = useState(null)
   const [board, setBoard] = useState(null)
   const [deadline, setDeadline] = useState(null)
-  const [status, setStatus] = useState("all")
-  const [taskType, setTaskType] = useState("all")
-  const [scope, setScope] = useState("mine")
-  const [q, setQ] = useState("")
   const [open, setOpen] = useState(false)
   const [quickTesting, setQuickTesting] = useState(false)
   const [projects, setProjects] = useState([])
   const [users, setUsers] = useState([])
   const [form, setForm] = useState(() => emptyForm(user?.id))
+  const { values, setFilter, setMany, clearFilters, activeCount, apiParams } = useListFilters(BASE_SCHEMA, {
+    preserve: ["view"],
+  })
+  const view = values.view || "list"
 
-  const setView = (v) => {
-    const next = new URLSearchParams(params)
-    next.set("view", v)
-    setParams(next, { replace: true })
-  }
+  const schema = useMemo(() => {
+    let fields = BASE_SCHEMA
+    if (isFreelancer) {
+      fields = BASE_SCHEMA.filter((f) => !["assignee_id", "mine", "project_id"].includes(f.key))
+    }
+    return fields.map((f) => {
+      if (f.key === "project_id") return { ...f, options: projects.map((p) => ({ value: p.id, label: p.name || p.number })) }
+      if (f.key === "assignee_id") return { ...f, options: users.map((u) => ({ value: u.id, label: u.name })) }
+      return f
+    })
+  }, [projects, users, isFreelancer])
+
+  const setView = (v) => setMany({ view: v })
 
   const load = () => {
-    const common = {}
-    if (scope === "mine") common.mine = true
-    if (taskType !== "all") common.task_type = taskType
-    if (q.trim()) common.q = q.trim()
+    const common = { ...apiParams }
+    delete common.view
+    if (common.mine) common.mine = true
+    if (common.overdue) common.overdue = true
 
     if (view === "kanban") {
       api.get("/work/tasks/board", { params: common })
@@ -77,20 +99,17 @@ export default function Tasks() {
         .catch(() => setDeadline({ buckets: [] }))
       return
     }
-    const paramsList = { ...common }
-    if (status !== "all") paramsList.status = status
-    api.get("/work/tasks", { params: paramsList })
+    api.get("/work/tasks", { params: common })
       .then((r) => setRows(r.data))
       .catch(() => setRows([]))
   }
 
-  useEffect(() => { load() }, [view, status, scope, taskType])
+  useEffect(() => { load() }, [view, apiParams]) // eslint-disable-line
 
   useEffect(() => {
-    if (!open) return
     api.get("/work/projects").then((r) => setProjects(r.data || [])).catch(() => {})
     api.get("/users", { params: { active_only: true } }).then((r) => setUsers(r.data || [])).catch(() => {})
-  }, [open])
+  }, [])
 
   const handleOpenCreate = (testing = false) => {
     setQuickTesting(testing)
@@ -175,33 +194,7 @@ export default function Tasks() {
               </button>
             ))}
           </div>
-          <Input data-testid="tasks-search" className="h-8 w-36 text-xs" placeholder="Search…"
-            value={q} onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") load() }} />
-          <Select value={scope} onValueChange={setScope}>
-            <SelectTrigger className="h-8 w-28 text-xs" data-testid="tasks-scope"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="mine">Assigned to me</SelectItem>
-              <SelectItem value="all">All tasks</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={taskType} onValueChange={setTaskType}>
-            <SelectTrigger className="h-8 w-36 text-xs" data-testid="tasks-type-filter"><SelectValue placeholder="Type" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All types</SelectItem>
-              {TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          {view === "list" && (
-            <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger className="h-8 w-32 text-xs" data-testid="tasks-status-filter"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All status</SelectItem>
-                {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          )}
-          {canCap("can_work_write") && (
+          {canCreate && (
             <>
               <Button size="sm" data-testid="quick-testing-btn" variant="outline"
                 onClick={() => handleOpenCreate(true)} className="h-8 text-xs">
@@ -216,6 +209,8 @@ export default function Tasks() {
         </div>
       }
     >
+      <FilterBar schema={schema} values={values} setFilter={setFilter}
+        clearFilters={clearFilters} activeCount={activeCount} testId="tasks-filters" />
       {view === "list" && (
         <div className="bg-white border border-slate-200 rounded-lg" data-testid="tasks-table">
           <table className="w-full text-sm">

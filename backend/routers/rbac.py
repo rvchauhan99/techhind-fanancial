@@ -39,6 +39,7 @@ class RoleIn(BaseModel):
     can_work_write: bool = False
     can_work_manage: bool = False
     can_rbac_admin: bool = False
+    can_ticket_write: bool = False
 
 
 class RolePatch(BaseModel):
@@ -51,6 +52,7 @@ class RolePatch(BaseModel):
     can_work_write: Optional[bool] = None
     can_work_manage: Optional[bool] = None
     can_rbac_admin: Optional[bool] = None
+    can_ticket_write: Optional[bool] = None
 
 
 class MenuIn(BaseModel):
@@ -133,6 +135,7 @@ async def create_role(body: RoleIn, user=Depends(require_capability("can_rbac_ad
         "can_work_write": body.can_work_write,
         "can_work_manage": body.can_work_manage,
         "can_rbac_admin": body.can_rbac_admin,
+        "can_ticket_write": body.can_ticket_write,
         "created_at": now,
         "updated_at": now,
     }

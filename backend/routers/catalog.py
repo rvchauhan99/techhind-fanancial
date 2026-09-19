@@ -4,8 +4,10 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from core import (db, require_roles, ALL_ROLES, WRITER_ROLES, audit, new_id, iso_now, today, CYCLE_MONTHS)
+from core import (db, require_roles, ALL_ROLES, WRITER_ROLES, audit, new_id, iso_now, today,
+                  CYCLE_MONTHS, get_company, assert_period_open, add_months)
 import email_service
+from gst import compute_document, exclusive_from_inclusive, r2
 
 router = APIRouter(prefix="/api", tags=["catalog"])
 
@@ -32,12 +34,17 @@ class CustomerIn(BaseModel):
 
 
 @router.get("/customers")
-async def list_customers(q: str = "", user=Depends(require_roles(*ALL_ROLES))):
+async def list_customers(q: str = "", state_code: str = "", has_gstin: str = "",
+                         user=Depends(require_roles(*ALL_ROLES))):
+    from list_query import apply_q, apply_eq
     flt = {}
-    if q:
-        flt = {"$or": [{"legal_name": {"$regex": q, "$options": "i"}},
-                       {"trade_name": {"$regex": q, "$options": "i"}},
-                       {"gstin": {"$regex": q, "$options": "i"}}]}
+    apply_eq(flt, "state_code", state_code)
+    v = (has_gstin or "").strip().lower()
+    if v in ("1", "true", "yes"):
+        flt["gstin"] = {"$exists": True, "$nin": [None, ""]}
+    elif v in ("0", "false", "no"):
+        flt["$or"] = [{"gstin": {"$exists": False}}, {"gstin": None}, {"gstin": ""}]
+    apply_q(flt, q, ["legal_name", "trade_name", "gstin"])
     return await db.customers.find(flt, {"_id": 0}).sort("legal_name", 1).to_list(500)
 
 
@@ -96,11 +103,23 @@ class ProductIn(BaseModel):
     unit: str = "Nos"
     description: str = ""
     active: bool = True
+    price_includes_gst: bool = True
 
 
 @router.get("/products")
-async def list_products(user=Depends(require_roles(*ALL_ROLES))):
-    return await db.products.find({}, {"_id": 0}).sort("name", 1).to_list(500)
+async def list_products(q: str = "", type: str = "", billing_cycle: str = "", active: str = "",
+                        user=Depends(require_roles(*ALL_ROLES))):
+    from list_query import apply_q, apply_eq
+    flt = {}
+    apply_eq(flt, "type", type)
+    apply_eq(flt, "billing_cycle", billing_cycle)
+    v = (active or "").strip().lower()
+    if v in ("1", "true", "yes"):
+        flt["active"] = True
+    elif v in ("0", "false", "no"):
+        flt["active"] = {"$ne": True}
+    apply_q(flt, q, ["name", "description", "hsn_sac"])
+    return await db.products.find(flt, {"_id": 0}).sort("name", 1).to_list(500)
 
 
 @router.post("/products")
@@ -134,6 +153,7 @@ class SubscriptionIn(BaseModel):
     next_renewal_on: str
     billing_cycle: str = "monthly"
     price: float = 0
+    price_includes_gst: bool = True
     auto_renew: bool = True
     notes: str = ""
 
@@ -145,19 +165,43 @@ def _sub_doc(body: SubscriptionIn, user: dict):
     return doc
 
 
+class RenewIn(BaseModel):
+    product_id: Optional[str] = None
+    plan_name: Optional[str] = None
+    price: Optional[float] = None
+    billing_cycle: Optional[str] = None
+    next_renewal_on: Optional[str] = None
+    invoice_date: Optional[str] = None
+    create_invoice: bool = True
+
+
 @router.get("/subscriptions")
-async def list_subscriptions(status: str = "", customer_id: str = "", user=Depends(require_roles(*ALL_ROLES))):
+async def list_subscriptions(status: str = "", customer_id: str = "", q: str = "",
+                             renewal_from: str = "", renewal_to: str = "",
+                             auto_renew: str = "",
+                             user=Depends(require_roles(*ALL_ROLES))):
+    from list_query import apply_q, apply_date_range, apply_eq
     flt = {}
-    if status:
-        flt["status"] = status
-    if customer_id:
-        flt["customer_id"] = customer_id
+    apply_eq(flt, "status", status)
+    apply_eq(flt, "customer_id", customer_id)
+    apply_date_range(flt, "next_renewal_on", renewal_from, renewal_to)
+    v = (auto_renew or "").strip().lower()
+    if v in ("1", "true", "yes"):
+        flt["auto_renew"] = True
+    elif v in ("0", "false", "no"):
+        flt["auto_renew"] = {"$ne": True}
+    apply_q(flt, q, ["plan_name", "product_name"])
     subs = await db.subscriptions.find(flt, {"_id": 0}).sort("next_renewal_on", 1).to_list(500)
     cust_ids = list({s["customer_id"] for s in subs})
     custs = await db.customers.find({"id": {"$in": cust_ids}}, {"_id": 0, "id": 1, "legal_name": 1}).to_list(500)
     cmap = {c["id"]: c["legal_name"] for c in custs}
     for s in subs:
         s["customer_name"] = cmap.get(s["customer_id"], "")
+    if q:
+        ql = q.lower()
+        subs = [s for s in subs if ql in (s.get("customer_name") or "").lower()
+                or ql in (s.get("plan_name") or "").lower()
+                or ql in (s.get("product_name") or "").lower()]
     return subs
 
 
@@ -170,6 +214,111 @@ async def create_subscription(body: SubscriptionIn, user=Depends(require_roles(*
                 f"Subscription '{doc['plan_name']}' created")
     doc.pop("_id", None)
     return doc
+
+
+@router.post("/subscriptions/{sid}/renew")
+async def renew_subscription(sid: str, body: RenewIn, user=Depends(require_roles(*WRITER_ROLES))):
+    """Update plan/price on renewal and optionally create a draft invoice (price incl. GST)."""
+    sub = await db.subscriptions.find_one({"id": sid}, {"_id": 0})
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    cust = await db.customers.find_one({"id": sub["customer_id"]}, {"_id": 0})
+    if not cust:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    product = None
+    product_id = body.product_id if body.product_id is not None else sub.get("product_id")
+    if product_id:
+        product = await db.products.find_one({"id": product_id}, {"_id": 0})
+
+    plan_name = body.plan_name or (product["name"] if product else sub.get("plan_name") or "Subscription")
+    price = float(body.price if body.price is not None else sub.get("price") or (product or {}).get("price") or 0)
+    cycle = body.billing_cycle or sub.get("billing_cycle") or (product or {}).get("billing_cycle") or "monthly"
+    if cycle == "one_time":
+        cycle = "monthly"
+    months = CYCLE_MONTHS.get(cycle, 1) or 1
+    inv_date = body.invoice_date or today().isoformat()
+    await assert_period_open(inv_date, user)
+
+    if body.next_renewal_on:
+        next_renewal = body.next_renewal_on
+    else:
+        base = date.fromisoformat(sub.get("next_renewal_on") or inv_date)
+        next_renewal = add_months(base, months).isoformat()
+
+    upd = {
+        "product_id": product_id,
+        "plan_name": plan_name,
+        "product_name": plan_name,
+        "price": price,
+        "price_includes_gst": True,
+        "billing_cycle": cycle,
+        "next_renewal_on": next_renewal,
+        "mrr": round(price / months, 2),
+        "status": "active" if sub.get("status") in ("trial", "grace", "overdue") else sub.get("status", "active"),
+    }
+    await db.subscriptions.update_one({"id": sid}, {"$set": upd})
+    await audit(
+        user, "subscription_renewed", "subscription", sid,
+        f"Renewed '{plan_name}' @ {price} incl GST → next {next_renewal}", diff=upd,
+    )
+
+    invoice = None
+    if body.create_invoice:
+        company = await get_company()
+        tax_rate = float((product or {}).get("tax_rate") or sub.get("tax_rate") or 18)
+        hsn = (product or {}).get("hsn_sac") or "998314"
+        exclusive = exclusive_from_inclusive(price, tax_rate)
+        lines = [{
+            "description": f"{plan_name} — renewal",
+            "product_id": product_id,
+            "hsn_sac": hsn,
+            "qty": 1,
+            "unit": "Nos",
+            "rate": exclusive,
+            "rate_inclusive": r2(price),
+            "discount": 0,
+            "tax_rate": tax_rate,
+        }]
+        pos_code = cust.get("state_code") or company.get("state_code")
+        pos_state = cust.get("state") or company.get("state")
+        computed = compute_document(lines, company["state_code"], pos_code)
+        primary_contact = (cust.get("contacts") or [{}])[0]
+        inv = {
+            "id": new_id(),
+            "doc_type": "INV",
+            "status": "draft",
+            "invoice_no": None,
+            "invoice_date": inv_date,
+            "due_date": inv_date,
+            "customer_id": cust["id"],
+            "customer_snapshot": {
+                "legal_name": cust.get("legal_name"), "trade_name": cust.get("trade_name", ""),
+                "gstin": cust.get("gstin", ""), "billing_address": cust.get("billing_address", ""),
+                "state": cust.get("state", ""), "state_code": cust.get("state_code", ""),
+                "contact_email": primary_contact.get("email", ""),
+            },
+            "place_of_supply": {"state": pos_state, "code": pos_code},
+            "pos_override_reason": "",
+            "is_export_sez": False, "lut_flag": False, "reverse_charge": False,
+            "subscription_id": sid,
+            "reference_invoice_id": None, "reference_invoice_no": None, "reason": "",
+            "notes": "Renewal invoice",
+            "irn": None, "irn_qr": None, "tds_amount": 0,
+            "created_by": user["id"], "created_at": iso_now(),
+            "branding_snapshot": None,
+            "amount_paid": 0.0, "balance": computed["grand_total"],
+            "sent_on": None, "send_status": None,
+        }
+        inv.update(computed)
+        inv["balance"] = inv["grand_total"]
+        await db.invoices.insert_one(inv)
+        await audit(user, "invoice_created", "invoice", inv["id"], f"Renewal draft for '{plan_name}'")
+        inv.pop("_id", None)
+        invoice = inv
+
+    sub_out = await db.subscriptions.find_one({"id": sid}, {"_id": 0})
+    return {"subscription": sub_out, "invoice": invoice}
 
 
 @router.get("/subscriptions/renewals")
@@ -351,8 +500,18 @@ class VendorIn(BaseModel):
 
 
 @router.get("/vendors")
-async def list_vendors(user=Depends(require_roles(*ALL_ROLES))):
-    return await db.vendors.find({}, {"_id": 0}).sort("name", 1).to_list(500)
+async def list_vendors(q: str = "", state_code: str = "", has_gstin: str = "",
+                       user=Depends(require_roles(*ALL_ROLES))):
+    from list_query import apply_q, apply_eq
+    flt = {}
+    apply_eq(flt, "state_code", state_code)
+    v = (has_gstin or "").strip().lower()
+    if v in ("1", "true", "yes"):
+        flt["gstin"] = {"$exists": True, "$nin": [None, ""]}
+    elif v in ("0", "false", "no"):
+        flt["$or"] = [{"gstin": {"$exists": False}}, {"gstin": None}, {"gstin": ""}]
+    apply_q(flt, q, ["name", "gstin", "contact_name", "contact_email"])
+    return await db.vendors.find(flt, {"_id": 0}).sort("name", 1).to_list(500)
 
 
 @router.post("/vendors")

@@ -8,7 +8,7 @@ from datetime import date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
 from core import (
@@ -97,8 +97,12 @@ def _label(acct: dict) -> str:
 
 
 @router.get("/banks")
-async def list_banks(active_only: bool = True, user=Depends(require_roles(*ALL_ROLES))):
+async def list_banks(active_only: bool = True, account_type: str = "", q: str = "",
+                     user=Depends(require_roles(*ALL_ROLES))):
+    from list_query import apply_q, apply_eq
     flt = {"is_active": {"$ne": False}} if active_only else {}
+    apply_eq(flt, "account_type", account_type)
+    apply_q(flt, q, ["bank_name", "account_name", "account_no", "ifsc"])
     rows = await db.bank_accounts.find(flt, {"_id": 0}).sort(
         [("account_type", 1), ("primary", -1), ("bank_name", 1)]
     ).to_list(200)
@@ -295,6 +299,23 @@ async def _sync_company_bank(acct: dict):
     await db.company.update_one({"id": "company"}, {"$set": {"bank": bank}})
 
 
+def _filter_statement_items(items, q="", min_amount=None, max_amount=None, side=""):
+    ql = (q or "").strip().lower()
+    out = items
+    if ql:
+        out = [r for r in out if ql in (r.get("narration") or "").lower()
+               or ql in (str(r.get("reference_no") or "")).lower()]
+    if side == "debit":
+        out = [r for r in out if float(r.get("debit") or 0) > 0]
+    elif side == "credit":
+        out = [r for r in out if float(r.get("credit") or 0) > 0]
+    if min_amount is not None:
+        out = [r for r in out if max(float(r.get("debit") or 0), float(r.get("credit") or 0)) >= float(min_amount)]
+    if max_amount is not None:
+        out = [r for r in out if max(float(r.get("debit") or 0), float(r.get("credit") or 0)) <= float(max_amount)]
+    return out
+
+
 @router.get("/banks/{bank_id}/statement")
 async def get_statement(
     bank_id: str,
@@ -302,14 +323,64 @@ async def get_statement(
     date_to: str = "",
     source_type: str = "",
     unlinked_only: bool = False,
+    q: str = "",
+    min_amount: float = None,
+    max_amount: float = None,
+    side: str = "",
     user=Depends(require_roles(*ALL_ROLES)),
 ):
-    return await bl.statement(
+    stmt = await bl.statement(
         bank_id,
         date_from=date_from,
         date_to=date_to,
         source_type=source_type,
         unlinked_only=unlinked_only,
+    )
+    items = _filter_statement_items(stmt.get("items") or [], q, min_amount, max_amount, side)
+    stmt["items"] = items
+    stmt["count"] = len(items)
+    return stmt
+
+
+@router.get("/banks/{bank_id}/statement.csv")
+async def get_statement_csv(
+    bank_id: str,
+    date_from: str = "",
+    date_to: str = "",
+    source_type: str = "",
+    unlinked_only: bool = False,
+    q: str = "",
+    min_amount: float = None,
+    max_amount: float = None,
+    side: str = "",
+    user=Depends(require_roles(*ALL_ROLES)),
+):
+    stmt = await get_statement(
+        bank_id, date_from=date_from, date_to=date_to, source_type=source_type,
+        unlinked_only=unlinked_only, q=q, min_amount=min_amount, max_amount=max_amount,
+        side=side, user=user,
+    )
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Date", "Value Date", "Narration", "Reference", "Source", "Debit", "Credit", "Balance", "Linked"])
+    for row in stmt.get("items") or []:
+        w.writerow([
+            row.get("txn_date", ""),
+            row.get("value_date", ""),
+            row.get("narration", ""),
+            row.get("reference_no", ""),
+            row.get("source_type", ""),
+            f'{row.get("debit", 0):.2f}',
+            f'{row.get("credit", 0):.2f}',
+            f'{row.get("running_balance", row.get("balance", 0)):.2f}',
+            row.get("linked_no") or row.get("linked_id") or "",
+        ])
+    acct = stmt.get("account") or {}
+    name = (acct.get("bank_name") or bank_id).replace(" ", "-")
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="bank-{name}-statement.csv"'},
     )
 
 

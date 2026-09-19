@@ -2,9 +2,19 @@ import React, { useEffect, useState } from "react";
 import api from "../lib/api";
 import { fmtINR, fmtDate } from "../lib/format";
 import Layout, { Empty } from "../components/Layout";
+import FilterBar, { FIELD } from "../components/filters/FilterBar";
+import { useListFilters } from "../hooks/useListFilters";
 
 const BUCKETS = ["current", "0-30", "31-60", "61-90", "90+"];
 const BUCKET_CLS = { current: "text-slate-600", "0-30": "text-blue-700", "31-60": "text-amber-700", "61-90": "text-orange-700", "90+": "text-red-700" };
+
+const SCHEMA = [
+  { key: "as_of", type: FIELD.DATE, label: "As of", width: "w-36" },
+  { key: "q", type: FIELD.TEXT, label: "Party / doc", placeholder: "Search…", width: "w-40" },
+  { key: "bucket", type: FIELD.SELECT, label: "Bucket", width: "w-32",
+    options: BUCKETS.map((b) => ({ value: b, label: b })) },
+  { key: "min_balance", type: FIELD.NUMBER, label: "Min balance", width: "w-28", placeholder: "0" },
+];
 
 function AgingTable({ tid, data, type }) {
   return (
@@ -48,14 +58,17 @@ function AgingTable({ tid, data, type }) {
 export default function Aging() {
   const [ar, setAr] = useState(null);
   const [ap, setAp] = useState(null);
+  const { values, setFilter, clearFilters, activeCount, apiParams } = useListFilters(SCHEMA);
 
   useEffect(() => {
-    api.get("/aging/ar").then((r) => setAr(r.data)).catch(() => {});
-    api.get("/aging/ap").then((r) => setAp(r.data)).catch(() => {});
-  }, []);
+    api.get("/aging/ar", { params: apiParams }).then((r) => setAr(r.data)).catch(() => {});
+    api.get("/aging/ap", { params: apiParams }).then((r) => setAp(r.data)).catch(() => {});
+  }, [apiParams]);
 
   return (
     <Layout title="AR / AP Aging">
+      <FilterBar schema={SCHEMA} values={values} setFilter={setFilter}
+        clearFilters={clearFilters} activeCount={activeCount} testId="aging-filters" />
       {ar && <AgingTable tid="ar-aging-table" data={ar} type="ar" />}
       {ap && <AgingTable tid="ap-aging-table" data={ap} type="ap" />}
     </Layout>

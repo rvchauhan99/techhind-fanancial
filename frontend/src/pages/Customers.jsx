@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search } from "lucide-react";
+import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import api, { apiError } from "../lib/api";
 import { INDIAN_STATES } from "../lib/format";
@@ -11,21 +11,30 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import FilterBar, { FIELD } from "../components/filters/FilterBar";
+import { useListFilters } from "../hooks/useListFilters";
 
 const emptyForm = { legal_name: "", trade_name: "", gstin: "", pan: "", state: "", state_code: "",
   billing_address: "", contact_name: "", contact_email: "", contact_phone: "", crm_tenant_key: "", notes: "" };
+
+const SCHEMA = [
+  { key: "q", type: FIELD.TEXT, label: "Search", placeholder: "Name / GSTIN…", width: "w-48" },
+  { key: "state_code", type: FIELD.SELECT, label: "State", width: "w-48",
+    options: INDIAN_STATES.map(([code, name]) => ({ value: code, label: `${code} — ${name}` })) },
+  { key: "has_gstin", type: FIELD.TOGGLE, label: "GSTIN", placeholder: "Has GSTIN" },
+];
 
 export default function Customers() {
   const { can } = useAuth();
   const navigate = useNavigate();
   const [rows, setRows] = useState(null);
-  const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [busy, setBusy] = useState(false);
+  const { values, setFilter, clearFilters, activeCount, apiParams } = useListFilters(SCHEMA);
 
-  const load = () => api.get("/customers", { params: { q } }).then((r) => setRows(r.data)).catch(() => {});
-  useEffect(() => { load(); }, []); // eslint-disable-line
+  const load = () => api.get("/customers", { params: apiParams }).then((r) => setRows(r.data)).catch(() => {});
+  useEffect(() => { load(); }, [apiParams]); // eslint-disable-line
 
   const submit = async (e) => {
     e.preventDefault();
@@ -55,15 +64,9 @@ export default function Customers() {
         </Button>
       )}
     >
+      <FilterBar schema={SCHEMA} values={values} setFilter={setFilter}
+        clearFilters={clearFilters} activeCount={activeCount} testId="customer-filters" />
       <div className="bg-white border border-slate-200 rounded-lg">
-        <div className="p-3 border-b border-slate-200 flex items-center gap-2 sticky top-0 bg-white rounded-t-lg z-10">
-          <div className="relative w-80">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-            <Input data-testid="customer-search-input" placeholder="Search name / GSTIN…" value={q}
-              onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} className="pl-9 h-9" />
-          </div>
-          <Button data-testid="customer-search-btn" variant="outline" size="sm" onClick={load}>Search</Button>
-        </div>
         <table className="w-full text-sm" data-testid="customers-table">
           <thead>
             <tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">

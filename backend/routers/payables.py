@@ -7,7 +7,9 @@ from pydantic import BaseModel
 from core import (db, require_roles, ALL_ROLES, WRITER_ROLES, FINANCE_ROLES, audit, new_id,
                   iso_now, next_number, get_company, assert_period_open)
 from gst import compute_document, r2
+from fastapi.responses import Response
 import storage
+import pdf as pdfmod
 
 router = APIRouter(prefix="/api", tags=["payables"])
 
@@ -49,12 +51,20 @@ async def _build_bill_doc(body: BillIn, company: dict) -> dict:
 
 @router.get("/bills")
 async def list_bills(status: str = "", vendor_id: str = "", page: int = 0, limit: int = 100,
+                     q: str = "", date_from: str = "", date_to: str = "",
+                     min_total: float = None, max_total: float = None, itc: str = "",
                      user=Depends(require_roles(*ALL_ROLES))):
+    from list_query import apply_q, apply_date_range, apply_amount_range, apply_eq
     flt = {}
-    if status:
-        flt["status"] = status
-    if vendor_id:
-        flt["vendor_id"] = vendor_id
+    apply_eq(flt, "status", status)
+    apply_eq(flt, "vendor_id", vendor_id)
+    apply_date_range(flt, "bill_date", date_from, date_to)
+    apply_amount_range(flt, "grand_total", min_total, max_total)
+    if (itc or "").lower() in ("1", "true", "yes", "eligible"):
+        flt["itc_eligible"] = True
+    elif (itc or "").lower() in ("0", "false", "no", "blocked"):
+        flt["itc_eligible"] = False
+    apply_q(flt, q, ["bill_no", "vendor_snapshot.name"])
     limit = max(1, min(limit, 500))
     cur = db.purchase_bills.find(flt, {"_id": 0}).sort("bill_date", -1)
     if page <= 0:
@@ -124,6 +134,19 @@ async def post_bill(bid: str, user=Depends(require_roles(*FINANCE_ROLES))):
     return await db.purchase_bills.find_one({"id": bid}, {"_id": 0})
 
 
+@router.get("/bills/{bid}/pdf")
+async def bill_pdf(bid: str, user=Depends(require_roles(*ALL_ROLES))):
+    doc = await db.purchase_bills.find_one({"id": bid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Bill not found")
+    company = await get_company()
+    html = pdfmod.render_bill_html(doc, company)
+    data = await pdfmod.build_pdf(html)
+    fname = f"bill-{(doc.get('bill_no') or bid).replace('/', '-')}.pdf"
+    return Response(content=data, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{fname}"'})
+
+
 class VAllocIn(BaseModel):
     bill_id: str
     amount: float
@@ -141,8 +164,31 @@ class VPaymentIn(BaseModel):
 
 
 @router.get("/vendor-payments")
-async def list_vendor_payments(user=Depends(require_roles(*ALL_ROLES))):
-    return await db.vendor_payments.find({}, {"_id": 0}).sort("payment_date", -1).to_list(1000)
+async def list_vendor_payments(user=Depends(require_roles(*ALL_ROLES)),
+                               q: str = "", date_from: str = "", date_to: str = "",
+                               vendor_id: str = "", method: str = "",
+                               min_amount: float = None, max_amount: float = None):
+    from list_query import apply_q, apply_date_range, apply_amount_range, apply_eq
+    flt = {}
+    apply_eq(flt, "vendor_id", vendor_id)
+    apply_eq(flt, "method", method)
+    apply_date_range(flt, "payment_date", date_from, date_to)
+    apply_amount_range(flt, "amount", min_amount, max_amount)
+    apply_q(flt, q, ["payment_ref", "vendor_name", "reference_no"])
+    return await db.vendor_payments.find(flt, {"_id": 0}).sort("payment_date", -1).to_list(1000)
+
+
+@router.get("/vendor-payments/{pid}/pdf")
+async def vendor_payment_pdf(pid: str, user=Depends(require_roles(*ALL_ROLES))):
+    doc = await db.vendor_payments.find_one({"id": pid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Vendor payment not found")
+    company = await get_company()
+    html = pdfmod.render_vendor_payment_html(doc, company)
+    data = await pdfmod.build_pdf(html)
+    fname = f"vpay-{(doc.get('payment_ref') or pid).replace('/', '-')}.pdf"
+    return Response(content=data, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{fname}"'})
 
 
 @router.post("/vendor-payments")
@@ -214,9 +260,33 @@ class VoucherIn(BaseModel):
 
 
 @router.get("/vouchers")
-async def list_vouchers(status: str = "", user=Depends(require_roles(*ALL_ROLES))):
-    flt = {"status": status} if status else {}
+async def list_vouchers(status: str = "", q: str = "", date_from: str = "", date_to: str = "",
+                        category: str = "", type: str = "", bank_id: str = "",
+                        min_total: float = None, max_total: float = None,
+                        user=Depends(require_roles(*ALL_ROLES))):
+    from list_query import apply_q, apply_date_range, apply_amount_range, apply_eq
+    flt = {}
+    apply_eq(flt, "status", status)
+    apply_eq(flt, "category", category)
+    apply_eq(flt, "type", type)
+    apply_eq(flt, "bank_id", bank_id)
+    apply_date_range(flt, "voucher_date", date_from, date_to)
+    apply_amount_range(flt, "total", min_total, max_total)
+    apply_q(flt, q, ["voucher_no", "narration", "vendor_name", "paid_via"])
     return await db.expense_vouchers.find(flt, {"_id": 0}).sort("voucher_date", -1).to_list(1000)
+
+
+@router.get("/vouchers/{vid}/pdf")
+async def voucher_pdf(vid: str, user=Depends(require_roles(*ALL_ROLES))):
+    doc = await db.expense_vouchers.find_one({"id": vid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Voucher not found")
+    company = await get_company()
+    html = pdfmod.render_voucher_html(doc, company)
+    data = await pdfmod.build_pdf(html)
+    fname = f"voucher-{(doc.get('voucher_no') or vid).replace('/', '-')}.pdf"
+    return Response(content=data, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{fname}"'})
 
 
 @router.post("/vouchers")

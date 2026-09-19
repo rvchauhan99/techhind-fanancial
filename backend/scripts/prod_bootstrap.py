@@ -56,7 +56,27 @@ async def bootstrap(*, force: bool = False, purge: bool = False) -> None:
     from core import db, hash_password, new_id, iso_now
     from indexes import ensure_indexes
     from rbac_seed import seed_rbac
-    from seed import COMPANY, MASTERS, PRODUCTS
+    from seed import COMPANY, MASTERS
+
+    # Production catalog — website list prices (excl + 18%) + Annual cutover SKU (incl.)
+    PROD_PRODUCTS = [
+        (
+            "TechHind Solar CRM — Annual", "saas_plan", "998314", 18, 184066, "yearly", True,
+            "Annual Solar CRM subscription (price incl. 18% GST)",
+        ),
+        (
+            "TechHind Solar CRM — Monthly", "saas_plan", "998314", 18, 14999, "monthly", False,
+            "Monthly Solar CRM subscription (₹14,999 excl. + 18% GST)",
+        ),
+        (
+            "TechHind Solar CRM — Quarterly", "saas_plan", "998314", 18, 43497, "quarterly", False,
+            "Quarterly Solar CRM subscription (₹14,499/mo × 3 = ₹43,497 excl. + 18% GST)",
+        ),
+        (
+            "TechHind Solar CRM — Half-Year", "saas_plan", "998314", 18, 83994, "half_yearly", False,
+            "Half-year Solar CRM subscription (₹13,999/mo × 6 = ₹83,994 excl. + 18% GST)",
+        ),
+    ]
 
     if purge:
         print("Purging transactional/demo collections…")
@@ -75,16 +95,28 @@ async def bootstrap(*, force: bool = False, purge: bool = False) -> None:
     await db.company.update_one({"id": "company"}, {"$set": COMPANY}, upsert=True)
     await db.masters.update_one({"id": "masters"}, {"$set": MASTERS}, upsert=True)
 
-    for name, ptype, hsn, rate, price, cycle, desc in PRODUCTS:
+    for name, ptype, hsn, rate, price, cycle, incl_gst, desc in PROD_PRODUCTS:
         existing = await db.products.find_one({"name": name}, {"_id": 0})
         if existing:
+            await db.products.update_one(
+                {"id": existing["id"]},
+                {"$set": {
+                    "type": ptype, "hsn_sac": hsn, "tax_rate": rate, "price": price,
+                    "billing_cycle": cycle, "unit": "Nos", "description": desc,
+                    "active": True, "price_includes_gst": incl_gst,
+                }},
+            )
             continue
         await db.products.insert_one({
             "id": new_id(), "name": name, "type": ptype, "hsn_sac": hsn, "tax_rate": rate,
-            "price": price, "billing_cycle": cycle,
-            "unit": "Hour" if ptype == "service" else "Nos",
-            "description": desc, "active": True, "created_at": iso_now(),
+            "price": price, "billing_cycle": cycle, "unit": "Nos",
+            "description": desc, "active": True, "price_includes_gst": incl_gst,
+            "created_at": iso_now(),
         })
+    # Hard-delete leftover demo catalog SKUs (keep only PROD_PRODUCTS Solar CRM list)
+    await db.products.delete_many(
+        {"name": {"$nin": [p[0] for p in PROD_PRODUCTS]}},
+    )
 
     if force or purge:
         await db.users.delete_many({"email": {"$ne": ADMIN_EMAIL}})
@@ -118,15 +150,6 @@ async def bootstrap(*, force: bool = False, purge: bool = False) -> None:
                 "branch": "SG Highway, Ahmedabad", "upi": "techhind@hdfcbank",
                 "opening_balance": 0.0, "opening_date": HDFC_OPENING_DATE,
                 "primary": True, "is_active": True,
-                "created_by": "prod_bootstrap", "created_at": iso_now(),
-            },
-            {
-                "id": new_id(), "account_type": "bank",
-                "bank_name": "ICICI Bank", "account_name": "TechHind Pvt Ltd",
-                "account_no": "120405500998", "ifsc": "ICIC0001204",
-                "branch": "Prahladnagar, Ahmedabad", "upi": "",
-                "opening_balance": 0.0, "opening_date": HDFC_OPENING_DATE,
-                "primary": False, "is_active": True,
                 "created_by": "prod_bootstrap", "created_at": iso_now(),
             },
             {

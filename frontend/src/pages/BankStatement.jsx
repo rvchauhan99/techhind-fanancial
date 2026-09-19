@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Upload, Plus, ArrowLeftRight, Link2 } from "lucide-react";
+import { ArrowLeft, Upload, Plus, ArrowLeftRight, Link2, Download } from "lucide-react";
 import { toast } from "sonner";
-import api, { apiError } from "../lib/api";
+import api, { apiError, pdfUrl } from "../lib/api";
 import { fmtINR, fmtDate } from "../lib/format";
 import Layout, { Empty } from "../components/Layout";
 import { useAuth } from "../context/AuthContext";
@@ -11,6 +11,8 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import FilterBar, { FIELD } from "../components/filters/FilterBar";
+import { useListFilters } from "../hooks/useListFilters";
 
 const SOURCE_LABELS = {
   payment: "Receipt",
@@ -22,15 +24,23 @@ const SOURCE_LABELS = {
   opening: "Opening",
 };
 
+const SCHEMA = [
+  { key: "dates", type: FIELD.DATE_RANGE, label: "Txn date" },
+  { key: "q", type: FIELD.TEXT, label: "Search", placeholder: "Narration / ref…", width: "w-40" },
+  { key: "source_type", type: FIELD.SELECT, label: "Source", width: "w-36",
+    options: Object.entries(SOURCE_LABELS).map(([v, l]) => ({ value: v, label: l })) },
+  { key: "side", type: FIELD.SELECT, label: "Side", width: "w-28",
+    options: [{ value: "debit", label: "Debit" }, { value: "credit", label: "Credit" }] },
+  { key: "amount", type: FIELD.NUMBER_RANGE, label: "Amount", minKey: "min_amount", maxKey: "max_amount" },
+  { key: "unlinked_only", type: FIELD.TOGGLE, label: "Unlinked", placeholder: "Unlinked only" },
+];
+
 export default function BankStatement() {
   const { id } = useParams();
   const { can } = useAuth();
   const [stmt, setStmt] = useState(null);
   const [accounts, setAccounts] = useState([]);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [sourceType, setSourceType] = useState("");
-  const [unlinkedOnly, setUnlinkedOnly] = useState(false);
+  const { values, setFilter, clearFilters, activeCount, apiParams } = useListFilters(SCHEMA);
   const [manualOpen, setManualOpen] = useState(false);
   const [xferOpen, setXferOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -49,15 +59,12 @@ export default function BankStatement() {
   const fileRef = useRef();
 
   const load = () => {
-    const params = {};
-    if (dateFrom) params.date_from = dateFrom;
-    if (dateTo) params.date_to = dateTo;
-    if (sourceType) params.source_type = sourceType;
-    if (unlinkedOnly) params.unlinked_only = true;
+    const params = { ...apiParams };
+    if (params.unlinked_only) params.unlinked_only = true;
     api.get(`/banks/${id}/statement`, { params }).then((r) => setStmt(r.data)).catch(() => setStmt(null));
   };
 
-  useEffect(() => { load(); }, [id, dateFrom, dateTo, sourceType, unlinkedOnly]); // eslint-disable-line
+  useEffect(() => { load(); }, [id, apiParams]); // eslint-disable-line
   useEffect(() => {
     api.get("/banks").then((r) => setAccounts(r.data)).catch(() => {});
   }, []);
@@ -165,6 +172,11 @@ export default function BankStatement() {
             data-testid="back-banks">
             <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Accounts
           </Link>
+          <a data-testid="bank-export-csv-btn"
+            href={pdfUrl(`/banks/${id}/statement.csv?${new URLSearchParams(apiParams).toString()}`)}
+            className="inline-flex items-center h-8 px-3 text-xs font-semibold border border-slate-200 rounded-md hover:bg-slate-50 text-slate-700">
+            <Download className="w-3.5 h-3.5 mr-1" /> Export CSV
+          </a>
           {can("admin", "accountant") && (
             <>
               <Button data-testid="bank-import-btn" size="sm" variant="outline" onClick={() => { setImportResult(null); setImportOpen(true); }}>
@@ -196,24 +208,8 @@ export default function BankStatement() {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 items-center">
-        <Input data-testid="stmt-from" type="date" className="h-8 w-36 bg-white" value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)} />
-        <Input data-testid="stmt-to" type="date" className="h-8 w-36 bg-white" value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)} />
-        <Select value={sourceType || "all"} onValueChange={(v) => setSourceType(v === "all" ? "" : v)}>
-          <SelectTrigger data-testid="stmt-source-filter" className="h-8 w-40 bg-white"><SelectValue placeholder="All sources" /></SelectTrigger>
-          <SelectContent className="bg-white">
-            <SelectItem value="all">All sources</SelectItem>
-            {Object.entries(SOURCE_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <label className="flex items-center gap-1.5 text-xs text-slate-600">
-          <input type="checkbox" checked={unlinkedOnly} onChange={(e) => setUnlinkedOnly(e.target.checked)}
-            data-testid="stmt-unlinked-only" />
-          Unlinked only
-        </label>
-      </div>
+      <FilterBar schema={SCHEMA} values={values} setFilter={setFilter}
+        clearFilters={clearFilters} activeCount={activeCount} testId="stmt-filters" />
 
       <div className="bg-white border border-slate-200 rounded-lg overflow-auto">
         <table className="w-full text-sm" data-testid="statement-table">

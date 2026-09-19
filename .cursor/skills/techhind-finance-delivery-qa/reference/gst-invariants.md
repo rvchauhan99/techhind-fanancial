@@ -4,10 +4,26 @@ Money / GST / period / RBAC changes require **Critical** verification.
 
 ## Tax split
 
-- Same place of supply as company state → **CGST + SGST**
-- Different state → **IGST**
+- Same place of supply as **Settings company** `state_code` → **CGST + SGST**
+- Different state (customer / invoice POS) → **IGST**
+- Software/SaaS lines default **18%** (SAC 998314)
+- Product/subscription `price_includes_gst`: line rate may be GST-inclusive; engine back-calculates exclusive via `exclusive_from_inclusive` before tax split
 - Support LUT / RCM / zero-rated / SEZ flags where implemented
 - Round-off line allowed; amounts in INR with Indian grouping in UI
+
+## Catalog list prices (website parity)
+
+- Monthly ₹14,999 excl; Quarterly ₹43,497 excl (₹14,499×3); Half-Year ₹83,994 excl (₹13,999×6) — all +18% GST
+- Annual cutover SKU remains GST-**inclusive** client catalog (not website Yearly ₹12,999/mo list)
+
+## CA accountant pack (`GET /accountant-pack?month=`)
+
+ZIP for the month: `MANIFEST.txt`, sales/purchase/expense/receipts(+TDS)/vendor_payments/AR/AP CSVs, invoice PDFs (`pdfs/`), receipt PDFs (`receipts/`), expense voucher PDFs (`vouchers/`), voucher attachments, purchase bill PDFs (`bills/`). Caps via `ACCOUNTANT_PACK_MAX_PDFS` / `ACCOUNTANT_PACK_MAX_ATTACHMENTS`. Per-doc PDFs also on Expenses / Vendors / Payments / Invoices list. Bank cash book: `GET /banks/{id}/statement.csv`. Form 26Q / portal GSTR deferred.
+
+## Subscriptions
+
+- `POST /api/subscriptions/{id}/renew` may change plan/price (incl. GST) and create a draft renewal invoice
+- Payment on a paid invoice with `subscription_id` advances `next_renewal_on`
 
 ## Numbering
 

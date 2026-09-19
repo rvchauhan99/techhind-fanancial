@@ -11,6 +11,8 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import FilterBar, { FIELD } from "../components/filters/FilterBar";
+import { useListFilters } from "../hooks/useListFilters";
 
 const emptyAcct = {
   account_type: "bank", bank_name: "", account_name: "TechHind Pvt Ltd",
@@ -18,18 +20,27 @@ const emptyAcct = {
   opening_balance: "0", opening_date: new Date().toISOString().slice(0, 10), primary: false,
 };
 
+const SCHEMA = [
+  { key: "q", type: FIELD.TEXT, label: "Search", placeholder: "Bank / A/c…", width: "w-40" },
+  { key: "account_type", type: FIELD.SELECT, label: "Type", width: "w-28",
+    options: [{ value: "bank", label: "Bank" }, { value: "cash", label: "Cash" }] },
+  { key: "active_only", type: FIELD.TOGGLE, label: "Active", placeholder: "Active only" },
+];
+
 export default function Banks() {
   const { can } = useAuth();
   const [rows, setRows] = useState(null);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyAcct);
   const [cashTotal, setCashTotal] = useState(null);
+  const { values, setFilter, clearFilters, activeCount, apiParams } = useListFilters(SCHEMA);
 
   const load = () => {
-    api.get("/banks", { params: { active_only: false } }).then((r) => setRows(r.data)).catch(() => setRows([]));
+    const params = { ...apiParams, active_only: apiParams.active_only ? true : false };
+    api.get("/banks", { params }).then((r) => setRows(r.data)).catch(() => setRows([]));
     api.get("/banks/cash-position").then((r) => setCashTotal(r.data.total)).catch(() => {});
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [apiParams]); // eslint-disable-line
 
   const save = async (e) => {
     e.preventDefault();
@@ -62,6 +73,9 @@ export default function Banks() {
         <span className="text-slate-500">Cash + bank position</span>
         <span className="font-mono font-bold text-lg text-emerald-700">{fmtINR(cashTotal ?? 0)}</span>
       </div>
+
+      <FilterBar schema={SCHEMA} values={values} setFilter={setFilter}
+        clearFilters={clearFilters} activeCount={activeCount} testId="bank-filters" />
 
       <div className="bg-white border border-slate-200 rounded-lg">
         <table className="w-full text-sm" data-testid="banks-table">

@@ -2,7 +2,7 @@
 
 **TechHind Company Finance (TCF)** — standalone single-company GST finance app (INR, FY Apr–Mar, series `TH/{FY}/{SEQ}`).
 
-**Last synced:** 2026-09-19 — Vultr API deploy (`deploy/vultr`, Caddy `api.techhind.in` → `:8010`, Atlas only). Prior: production cutover pack; bank ledger BANK-01…11.
+**Last synced:** 2026-09-19 — Profile `/profile`, first-login password, freelancer role (tasks/tickets). Prior: FilterBar + `list_query`, CA pack PDFs, demo catalog purge.
 
 ## Not Solar CRM
 

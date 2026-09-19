@@ -1,6 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { Plus, CheckCircle2, XCircle, Trash2, Send, Paperclip } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Plus, CheckCircle2, XCircle, Trash2, Send, Paperclip, FileDown } from "lucide-react";
 import { toast } from "sonner";
 import api, { apiError, pdfUrl } from "../lib/api";
 import { fmtINR, fmtDate } from "../lib/format";
@@ -12,24 +11,42 @@ import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import FilterBar, { FIELD } from "../components/filters/FilterBar";
+import { useListFilters } from "../hooks/useListFilters";
 
 const emptyForm = { voucher_date: new Date().toISOString().slice(0, 10), category: "", narration: "",
   amount: "", tax_rate: 0, vendor_name: "", paid_via: "", bank_id: "", type: "expense" };
 
+const BASE_SCHEMA = [
+  { key: "q", type: FIELD.TEXT, label: "Search", placeholder: "Voucher / narration…", width: "w-44" },
+  { key: "status", type: FIELD.SELECT, label: "Status", width: "w-40",
+    options: ["draft", "pending_approval", "posted", "rejected"].map((s) => ({ value: s, label: s.replace("_", " ") })) },
+  { key: "dates", type: FIELD.DATE_RANGE, label: "Voucher date" },
+  { key: "category", type: FIELD.SELECT, label: "Category", width: "w-40", options: [] },
+  { key: "type", type: FIELD.SELECT, label: "Type", width: "w-36",
+    options: [{ value: "expense", label: "Expense" }, { value: "salary_summary", label: "Salary" }] },
+  { key: "bank_id", type: FIELD.SELECT, label: "Paid via", width: "w-40", options: [] },
+  { key: "total", type: FIELD.NUMBER_RANGE, label: "Total", minKey: "min_total", maxKey: "max_total" },
+];
+
 export default function Expenses() {
   const { can } = useAuth();
-  const [params] = useSearchParams();
-  const statusFilter = params.get("status") || "";
   const [rows, setRows] = useState(null);
   const [categories, setCategories] = useState([]);
   const [banks, setBanks] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
-  const [filter, setFilter] = useState(statusFilter);
   const fileRefs = useRef({});
+  const { values, setFilter, clearFilters, activeCount, apiParams } = useListFilters(BASE_SCHEMA);
 
-  const load = () => api.get("/vouchers", { params: { status: filter } }).then((r) => setRows(r.data)).catch(() => {});
-  useEffect(() => { load(); }, [filter]); // eslint-disable-line
+  const schema = useMemo(() => BASE_SCHEMA.map((f) => {
+    if (f.key === "category") return { ...f, options: categories.map((c) => ({ value: c, label: c })) };
+    if (f.key === "bank_id") return { ...f, options: banks.map((b) => ({ value: b.id, label: b.label || b.bank_name })) };
+    return f;
+  }), [categories, banks]);
+
+  const load = () => api.get("/vouchers", { params: apiParams }).then((r) => setRows(r.data)).catch(() => {});
+  useEffect(() => { load(); }, [apiParams]); // eslint-disable-line
   useEffect(() => {
     api.get("/settings/masters").then((r) => {
       setCategories((r.data.expense_categories || []).map((c) => c.name));
@@ -92,15 +109,8 @@ export default function Expenses() {
       actions={can("admin", "accountant", "ops") && (
         <Button data-testid="new-voucher-btn" size="sm" onClick={() => setOpen(true)}
           className="bg-[#0F284E] hover:bg-[#17386D] text-white"><Plus className="w-4 h-4 mr-1" /> New Voucher</Button>)}>
-      <div className="flex items-center gap-2">
-        <Select value={filter || "all"} onValueChange={(v) => setFilter(v === "all" ? "" : v)}>
-          <SelectTrigger data-testid="voucher-status-filter" className="w-52 h-8 bg-white"><SelectValue placeholder="All statuses" /></SelectTrigger>
-          <SelectContent className="bg-white">
-            <SelectItem value="all">All statuses</SelectItem>
-            {["draft", "pending_approval", "posted", "rejected"].map((s) => <SelectItem key={s} value={s}>{s.replace("_", " ")}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
+      <FilterBar schema={schema} values={values} setFilter={setFilter}
+        clearFilters={clearFilters} activeCount={activeCount} testId="voucher-filters" />
       <div className="bg-white border border-slate-200 rounded-lg">
         <table className="w-full text-sm" data-testid="vouchers-table">
           <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
@@ -128,6 +138,10 @@ export default function Expenses() {
                       className="text-[#0066CC] hover:underline mr-2">{a.name}</a>))}
                 </td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
+                  <a data-testid={`download-voucher-pdf-${v.id}`} href={pdfUrl(`/vouchers/${v.id}/pdf`)}
+                    target="_blank" rel="noreferrer" title="Download voucher PDF"
+                    className="inline-flex p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-[#0F284E]">
+                    <FileDown className="w-3.5 h-3.5" /></a>
                   {["draft", "rejected"].includes(v.status) && can("admin", "accountant", "ops") && (<>
                     <input type="file" className="hidden" ref={(el) => (fileRefs.current[v.id] = el)} onChange={(e) => upload(v.id, e.target.files[0])} />
                     <button data-testid={`attach-voucher-${v.id}`} onClick={() => fileRefs.current[v.id]?.click()} title="Attach file"

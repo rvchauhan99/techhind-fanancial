@@ -6,6 +6,8 @@ import { fmtDateTime } from "../lib/format";
 import Layout from "../components/Layout";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
+import FilterBar, { FIELD } from "../components/filters/FilterBar";
+import { useListFilters } from "../hooks/useListFilters";
 
 const STATE_META = {
   open: { label: "Open", cls: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: LockOpen },
@@ -15,12 +17,20 @@ const STATE_META = {
 };
 const NEXT = { open: "in_review", in_review: "gst_filed", gst_filed: "closed" };
 
+const SCHEMA = [
+  { key: "fy", type: FIELD.SELECT, label: "FY", width: "w-36",
+    options: ["2024-25", "2025-26", "2026-27", "2027-28"].map((fy) => ({ value: fy, label: `FY ${fy}` })) },
+  { key: "state", type: FIELD.SELECT, label: "Status", width: "w-36",
+    options: Object.entries(STATE_META).map(([v, m]) => ({ value: v, label: m.label })) },
+];
+
 export default function PeriodClose() {
   const { can } = useAuth();
   const [rows, setRows] = useState(null);
+  const { values, setFilter, clearFilters, activeCount, apiParams } = useListFilters(SCHEMA);
 
-  const load = () => api.get("/periods").then((r) => setRows(r.data)).catch(() => {});
-  useEffect(() => { load(); }, []);
+  const load = () => api.get("/periods", { params: apiParams }).then((r) => setRows(r.data)).catch(() => {});
+  useEffect(() => { load(); }, [apiParams]); // eslint-disable-line
 
   const transition = async (month, state) => {
     try {
@@ -41,6 +51,8 @@ export default function PeriodClose() {
         Lock rules — <b>in review</b>: only Admin can post into the period · <b>GST filed / closed</b>: fully locked for everyone.
         Backward transitions and reopening a closed period require Admin.
       </div>
+      <FilterBar schema={SCHEMA} values={values} setFilter={setFilter}
+        clearFilters={clearFilters} activeCount={activeCount} testId="period-filters" />
       <div className="bg-white border border-slate-200 rounded-lg max-w-4xl">
         <table className="w-full text-sm" data-testid="periods-table">
           <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">

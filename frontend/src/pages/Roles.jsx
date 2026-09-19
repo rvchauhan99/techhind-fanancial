@@ -13,6 +13,7 @@ const CAP_KEYS = [
   "can_work_write",
   "can_work_manage",
   "can_rbac_admin",
+  "can_ticket_write",
 ]
 
 export default function Roles() {

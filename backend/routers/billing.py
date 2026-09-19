@@ -28,6 +28,8 @@ class LineIn(BaseModel):
     rate: float = 0
     discount: float = 0
     tax_rate: float = 18
+    rate_includes_gst: bool = False
+    price_includes_gst: bool = False
 
 
 class InvoiceIn(BaseModel):
@@ -91,18 +93,21 @@ async def _build_invoice_doc(body: InvoiceIn, company: dict) -> dict:
 
 @router.get("/invoices")
 async def list_invoices(status: str = "", doc_type: str = "", customer_id: str = "", q: str = "",
+                        date_from: str = "", date_to: str = "",
+                        min_total: float = None, max_total: float = None,
+                        tax_scheme: str = "", has_balance: str = "",
                         page: int = 0, limit: int = 100,
                         user=Depends(require_roles(*ALL_ROLES))):
+    from list_query import apply_q, apply_date_range, apply_amount_range, apply_eq, apply_bool_flag
     flt = {}
-    if status:
-        flt["status"] = status
-    if doc_type:
-        flt["doc_type"] = doc_type
-    if customer_id:
-        flt["customer_id"] = customer_id
-    if q:
-        flt["$or"] = [{"invoice_no": {"$regex": q, "$options": "i"}},
-                      {"customer_snapshot.legal_name": {"$regex": q, "$options": "i"}}]
+    apply_eq(flt, "status", status)
+    apply_eq(flt, "doc_type", doc_type)
+    apply_eq(flt, "customer_id", customer_id)
+    apply_eq(flt, "tax_scheme", tax_scheme)
+    apply_date_range(flt, "invoice_date", date_from, date_to)
+    apply_amount_range(flt, "grand_total", min_total, max_total)
+    apply_bool_flag(flt, "balance", has_balance)
+    apply_q(flt, q, ["invoice_no", "customer_snapshot.legal_name"])
     limit = max(1, min(limit, 500))
     cur = db.invoices.find(flt, {"_id": 0}).sort([("invoice_date", -1), ("created_at", -1)])
     if page <= 0:
@@ -411,9 +416,21 @@ async def _apply_payment_to_invoice(invoice_id: str, amount: float, session=None
 
 @router.get("/payments")
 async def list_payments(customer_id: str = "", page: int = 0, limit: int = 100,
+                        q: str = "", date_from: str = "", date_to: str = "",
+                        method: str = "", bank_id: str = "",
+                        min_amount: float = None, max_amount: float = None,
+                        has_tds: str = "",
                         user=Depends(require_roles(*ALL_ROLES))):
     """Legacy: page=0 returns a bare list. page>=1 returns {items,page,limit,total}."""
-    flt = {"customer_id": customer_id} if customer_id else {}
+    from list_query import apply_q, apply_date_range, apply_amount_range, apply_eq, apply_bool_flag
+    flt = {}
+    apply_eq(flt, "customer_id", customer_id)
+    apply_eq(flt, "method", method)
+    apply_eq(flt, "bank_id", bank_id)
+    apply_date_range(flt, "payment_date", date_from, date_to)
+    apply_amount_range(flt, "amount", min_amount, max_amount)
+    apply_bool_flag(flt, "tds_amount", has_tds)
+    apply_q(flt, q, ["receipt_no", "customer_name", "reference_no"])
     limit = max(1, min(limit, 500))
     if page <= 0:
         return await db.payments.find(flt, {"_id": 0}).sort("payment_date", -1).to_list(1000)

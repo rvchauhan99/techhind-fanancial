@@ -14,6 +14,7 @@ from core import (
     db,
     field_diff,
     iso_now,
+    is_own_work_role,
     new_id,
     next_number,
     require_capability,
@@ -349,9 +350,12 @@ async def list_projects(
     status: Optional[str] = None,
     customer_id: Optional[str] = None,
     q: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     user=Depends(require_roles(*ALL_ROLES)),
 ):
+    from list_query import apply_date_range
     filt: dict = {}
     if status:
         filt["status"] = status
@@ -362,6 +366,7 @@ async def list_projects(
             {"name": {"$regex": q.strip(), "$options": "i"}},
             {"number": {"$regex": q.strip(), "$options": "i"}},
         ]
+    apply_date_range(filt, "due_date", date_from or "", date_to or "")
     rows = await db.projects.find(filt, {"_id": 0}).sort("updated_at", -1).to_list(limit)
     return [await _enrich_project(r) for r in rows]
 
@@ -466,11 +471,17 @@ def _build_task_filter(
     tt = task_type or category
     if tt:
         filt["task_type"] = _normalize_task_type(tt)
-    if mine:
+    if is_own_work_role(user):
+        # Freelancer: only assigned or observing
+        filt["$or"] = [
+            {"assignee_id": user["id"]},
+            {"observer_ids": user["id"]},
+        ]
+    elif mine:
         filt["assignee_id"] = user["id"]
     elif assignee_id:
         filt["assignee_id"] = assignee_id
-    if observer_id:
+    if observer_id and not is_own_work_role(user):
         filt["observer_ids"] = observer_id
     today_s = today().isoformat()
     if due_bucket:
@@ -479,11 +490,26 @@ def _build_task_filter(
         filt["due_date"] = {"$lt": today_s}
         filt["status"] = {"$in": list(OPEN_STATUSES)}
     if q and q.strip():
-        filt["$or"] = [
+        q_clause = [
             {"title": {"$regex": q.strip(), "$options": "i"}},
             {"number": {"$regex": q.strip(), "$options": "i"}},
         ]
+        if "$or" in filt:
+            filt = {"$and": [{"$or": filt.pop("$or")}, {"$or": q_clause}]}
+        else:
+            filt["$or"] = q_clause
     return filt
+
+
+def _freelancer_can_access_task(task: dict, user: dict) -> bool:
+    if not is_own_work_role(user):
+        return True
+    uid = user["id"]
+    if task.get("assignee_id") == uid:
+        return True
+    if uid in (task.get("observer_ids") or []):
+        return True
+    return False
 
 
 # ---------- Tasks: board / deadline / reminders (before {id}) ----------
@@ -568,20 +594,26 @@ async def list_tasks(
     observer_id: Optional[str] = None,
     due_bucket: Optional[str] = None,
     q: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     user=Depends(require_roles(*ALL_ROLES)),
 ):
+    from list_query import apply_date_range
     filt = _build_task_filter(
         status=status, project_id=project_id, assignee_id=assignee_id,
         category=category, task_type=task_type, mine=mine, overdue=overdue,
         observer_id=observer_id, due_bucket=due_bucket, q=q, user=user,
     )
+    apply_date_range(filt, "due_date", date_from or "", date_to or "")
     rows = await db.tasks.find(filt, {"_id": 0}).sort("updated_at", -1).to_list(limit)
     return [await _enrich_task(r) for r in rows]
 
 
 @router.post("/tasks")
 async def create_task(body: TaskIn, user=Depends(require_capability("can_work_write"))):
+    if is_own_work_role(user):
+        raise HTTPException(status_code=403, detail="Freelancers cannot create tasks")
     status = body.status
     priority = body.priority
     task_type = _normalize_task_type(body.task_type or body.category)
@@ -656,6 +688,8 @@ async def get_task(task_id: str, user=Depends(require_roles(*ALL_ROLES))):
     t = await db.tasks.find_one({"id": task_id}, {"_id": 0})
     if not t:
         raise HTTPException(status_code=404, detail="Task not found")
+    if not _freelancer_can_access_task(t, user):
+        raise HTTPException(status_code=403, detail="Not allowed to view this task")
     return await _enrich_task(t)
 
 
@@ -668,6 +702,8 @@ async def patch_task(
     existing = await db.tasks.find_one({"id": task_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Task not found")
+    if not _freelancer_can_access_task(existing, user):
+        raise HTTPException(status_code=403, detail="Not allowed to update this task")
     existing = _migrate_task_doc(existing)
     caps = await user_capabilities(user)
     patch = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
@@ -676,6 +712,9 @@ async def patch_task(
     if "reminder_at" in raw and raw["reminder_at"] is None:
         patch["reminder_at"] = None
         patch["reminder_sent"] = False
+
+    if is_own_work_role(user) and "assignee_id" in patch:
+        raise HTTPException(status_code=403, detail="Freelancers cannot reassign tasks")
 
     if "task_type" in patch or "category" in patch:
         tt = _normalize_task_type(patch.get("task_type") or patch.get("category"))
@@ -691,6 +730,8 @@ async def patch_task(
     if "priority" in patch and patch["priority"] is not None:
         _validate_priority(patch["priority"])
     if "observer_ids" in patch and patch["observer_ids"] is not None:
+        if is_own_work_role(user):
+            raise HTTPException(status_code=403, detail="Freelancers cannot change observers")
         patch["observer_ids"] = await _valid_user_ids(patch["observer_ids"])
     if "assignee_id" in patch:
         new_a = patch["assignee_id"]
@@ -728,6 +769,8 @@ async def start_task(task_id: str, user=Depends(require_capability("can_work_wri
     existing = await db.tasks.find_one({"id": task_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Task not found")
+    if not _freelancer_can_access_task(existing, user):
+        raise HTTPException(status_code=403, detail="Not allowed to update this task")
     now = iso_now()
     patch = {
         "status": "in_progress",
@@ -747,6 +790,8 @@ async def complete_task(task_id: str, user=Depends(require_capability("can_work_
     existing = await db.tasks.find_one({"id": task_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Task not found")
+    if not _freelancer_can_access_task(existing, user):
+        raise HTTPException(status_code=403, detail="Not allowed to update this task")
     now = iso_now()
     patch = {
         "status": "done",

@@ -1,5 +1,5 @@
 import "@/App.css";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { Toaster } from "./components/ui/sonner";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -31,6 +31,28 @@ import WorkReport from "./pages/WorkReport";
 import Roles from "./pages/Roles";
 import Banks from "./pages/Banks";
 import BankStatement from "./pages/BankStatement";
+import Profile from "./pages/Profile";
+import ChangePasswordForm from "./components/ChangePasswordForm";
+
+function PasswordChangeGate() {
+  const { changePassword, homePath } = useAuth();
+  const navigate = useNavigate();
+
+  const handle = async ({ currentPassword, newPassword }) => {
+    const res = await changePassword(currentPassword, newPassword);
+    if (res.error) return res;
+    navigate(homePath());
+    return { ok: true };
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC] p-6" data-testid="password-change-gate">
+      <div className="w-full max-w-sm bg-white border border-slate-200 rounded-xl p-8 shadow-sm">
+        <ChangePasswordForm onSubmit={handle} />
+      </div>
+    </div>
+  );
+}
 
 function RequireAuth({ children }) {
   const { user, loading, apiConfigError } = useAuth();
@@ -42,7 +64,13 @@ function RequireAuth({ children }) {
     );
   if (apiConfigError) return <Navigate to="/login?error=config" replace />;
   if (!user) return <Navigate to="/login" replace />;
+  if (user.must_change_password) return <PasswordChangeGate />;
   return children;
+}
+
+function HomeRedirect() {
+  const { homePath } = useAuth();
+  return <Navigate to={homePath()} replace />;
 }
 
 export default function App() {
@@ -52,6 +80,7 @@ export default function App() {
         <ErrorBoundary>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
             <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
             <Route path="/customers" element={<RequireAuth><Customers /></RequireAuth>} />
             <Route path="/customers/:id" element={<RequireAuth><CustomerDetail /></RequireAuth>} />
@@ -80,7 +109,7 @@ export default function App() {
             <Route path="/tasks/:id" element={<RequireAuth><TaskDetail /></RequireAuth>} />
             <Route path="/work-report" element={<RequireAuth><WorkReport /></RequireAuth>} />
             <Route path="/roles" element={<RequireAuth><Roles /></RequireAuth>} />
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<RequireAuth><HomeRedirect /></RequireAuth>} />
           </Routes>
         </ErrorBoundary>
       </BrowserRouter>

@@ -60,6 +60,11 @@ _LEGACY_CAPS = {
         can_work_write=False, can_work_manage=False, can_rbac_admin=False,
         can_ticket_write=True,
     ),
+    "freelancer": dict(
+        can_finance_write=False, can_finance_admin=False, can_finance_audit=False,
+        can_work_write=True, can_work_manage=False, can_rbac_admin=False,
+        can_ticket_write=True,
+    ),
 }
 
 _logger = logging.getLogger("core")
@@ -184,7 +189,31 @@ async def get_current_user(request: Request) -> dict:
         raise HTTPException(status_code=401, detail="User not found")
     if not user.get("active", True):
         raise HTTPException(status_code=403, detail="User disabled")
+    user["must_change_password"] = bool(user.get("must_change_password"))
+    user["first_login"] = user["must_change_password"]
+    if user["must_change_password"]:
+        path = (request.url.path or "").rstrip("/") or "/"
+        allowed = {
+            "/api/auth/me",
+            "/api/auth/change-password",
+            "/api/auth/logout",
+            "/api/auth/refresh",
+        }
+        if path not in allowed:
+            raise HTTPException(status_code=403, detail="password_change_required")
     return user
+
+
+def is_own_work_role(user: dict) -> bool:
+    """Freelancer may only access assigned tasks/tickets."""
+    return (user.get("role") or "") == "freelancer"
+
+
+def public_user(user: dict) -> dict:
+    out = {k: v for k, v in user.items() if k not in ("password_hash", "totp_secret", "totp_pending_secret", "_id")}
+    out["must_change_password"] = bool(out.get("must_change_password"))
+    out["first_login"] = out["must_change_password"]
+    return out
 
 
 def month_date_range(month: str) -> dict:

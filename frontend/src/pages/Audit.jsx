@@ -2,30 +2,32 @@ import React, { useEffect, useState } from "react";
 import api from "../lib/api";
 import { fmtDateTime } from "../lib/format";
 import Layout, { Empty } from "../components/Layout";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import FilterBar, { FIELD } from "../components/filters/FilterBar";
+import { useListFilters } from "../hooks/useListFilters";
 
 const ENTITY_TYPES = ["user", "company", "masters", "customer", "product", "subscription", "vendor",
   "invoice", "payment", "purchase_bill", "vendor_payment", "expense_voucher", "period", "import", "system"];
 
+const SCHEMA = [
+  { key: "q", type: FIELD.TEXT, label: "Search", placeholder: "Summary / user…", width: "w-44" },
+  { key: "entity_type", type: FIELD.SELECT, label: "Entity", width: "w-44",
+    options: ENTITY_TYPES.map((t) => ({ value: t, label: t.replace(/_/g, " ") })) },
+  { key: "action", type: FIELD.TEXT, label: "Action", placeholder: "action…", width: "w-36" },
+  { key: "dates", type: FIELD.DATE_RANGE, label: "Date" },
+];
+
 export default function Audit() {
   const [rows, setRows] = useState(null);
-  const [type, setType] = useState("");
+  const { values, setFilter, clearFilters, activeCount, apiParams } = useListFilters(SCHEMA);
 
   useEffect(() => {
-    api.get("/audit", { params: { entity_type: type } }).then((r) => setRows(r.data)).catch(() => setRows([]));
-  }, [type]);
+    api.get("/audit", { params: apiParams }).then((r) => setRows(r.data)).catch(() => setRows([]));
+  }, [apiParams]);
 
   return (
     <Layout title="Audit Trail">
-      <div className="flex items-center gap-2">
-        <Select value={type || "all"} onValueChange={(v) => setType(v === "all" ? "" : v)}>
-          <SelectTrigger data-testid="audit-type-filter" className="w-56 h-8 bg-white"><SelectValue placeholder="All entities" /></SelectTrigger>
-          <SelectContent className="bg-white">
-            <SelectItem value="all">All entities</SelectItem>
-            {ENTITY_TYPES.map((t) => <SelectItem key={t} value={t}>{t.replace("_", " ")}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
+      <FilterBar schema={SCHEMA} values={values} setFilter={setFilter}
+        clearFilters={clearFilters} activeCount={activeCount} testId="audit-filters" />
       <div className="bg-white border border-slate-200 rounded-lg">
         <table className="w-full text-sm" data-testid="audit-table">
           <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">

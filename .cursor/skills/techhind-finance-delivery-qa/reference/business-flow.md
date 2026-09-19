@@ -12,6 +12,12 @@ Standalone single-company finance for TechHind Pvt Ltd. INR only. FY 1 Apr – 3
 | Accountant | Approvals, payments, period close, reports / accountant pack |
 | Ops | Draft invoices, record payments, renewals |
 | Viewer | Read-only (Settings → Security restricted) |
+| Freelancer | Assigned tasks + tickets only (no finance menus; cannot create tasks/tickets) |
+
+## Auth extras
+
+- New users (Settings → Users) get a temporary password and `must_change_password`; first login forces a password change before the app opens.
+- Profile (`/profile`): change password + authenticator 2FA (QR). Settings → Security links here.
 
 ## Core flows
 

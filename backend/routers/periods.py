@@ -15,19 +15,30 @@ class StateIn(BaseModel):
 
 
 @router.get("/periods")
-async def list_periods(user=Depends(require_roles(*ALL_ROLES))):
+async def list_periods(state: str = "", fy: str = "", user=Depends(require_roles(*ALL_ROLES))):
     stored = {p["month"]: p for p in await db.periods.find({}, {"_id": 0}).to_list(500)}
     t = date.today()
     y, m = t.year, t.month
     out = []
-    for _ in range(12):
+    for _ in range(24):
         mo = f"{y:04d}-{m:02d}"
-        p = stored.get(mo)
-        out.append(p or {"month": mo, "state": "open", "history": []})
+        p = stored.get(mo) or {"month": mo, "state": "open", "history": []}
+        out.append(p)
         m -= 1
         if m == 0:
             m = 12
             y -= 1
+    if state:
+        out = [p for p in out if p.get("state") == state]
+    if fy:
+        # FY Apr–Mar: fy=2026-27 → months 2026-04..2027-03
+        parts = fy.replace("/", "-").split("-")
+        try:
+            y0 = int(parts[0])
+            start, end = f"{y0:04d}-04", f"{y0 + 1:04d}-03"
+            out = [p for p in out if start <= p["month"] <= end]
+        except (ValueError, IndexError):
+            pass
     return out
 
 

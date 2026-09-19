@@ -17,6 +17,7 @@ from core import (
     audit,
     db,
     iso_now,
+    is_own_work_role,
     new_id,
     next_number,
     require_capability,
@@ -416,11 +417,13 @@ async def list_tickets(
         filt["customer_id"] = customer_id
     if category:
         filt["category"] = category
-    if _as_bool(mine):
+    if _as_bool(mine) or is_own_work_role(user):
         filt["assignee_id"] = user["id"]
     elif assignee_id:
         filt["assignee_id"] = assignee_id
     if _as_bool(unassigned):
+        if is_own_work_role(user):
+            return []
         filt["$or"] = [
             {"assignee_id": None},
             {"assignee_id": ""},
@@ -467,6 +470,8 @@ async def list_tickets(
 
 @router.post("/tickets")
 async def create_ticket(body: TicketCreateIn, user=Depends(require_ticket_write)):
+    if is_own_work_role(user):
+        raise HTTPException(status_code=403, detail="Freelancers cannot create tickets")
     cust = await _customer_or_404(body.customer_id)
     ticket = await _insert_ticket(
         customer=cust,
@@ -498,6 +503,8 @@ async def get_ticket(tid: str, user=Depends(require_roles(*ALL_ROLES))):
     ticket = await db.tickets.find_one({"id": tid}, {"_id": 0})
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    if is_own_work_role(user) and ticket.get("assignee_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Not allowed to view this ticket")
     msgs = await db.ticket_messages.find({"ticket_id": tid}, {"_id": 0}).sort("created_at", 1).to_list(500)
     for m in msgs:
         if not m.get("visibility"):
@@ -510,6 +517,8 @@ async def patch_ticket(tid: str, body: TicketPatchIn, user=Depends(require_ticke
     ticket = await db.tickets.find_one({"id": tid}, {"_id": 0})
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    if is_own_work_role(user) and ticket.get("assignee_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Not allowed to update this ticket")
     updates: dict = {"updated_at": iso_now()}
     diff: dict = {}
 
@@ -538,6 +547,8 @@ async def patch_ticket(tid: str, body: TicketPatchIn, user=Depends(require_ticke
         diff["category"] = {"old": ticket.get("category"), "new": cat}
 
     if body.assignee_id is not None:
+        if is_own_work_role(user):
+            raise HTTPException(status_code=403, detail="Freelancers cannot reassign tickets")
         aid = (body.assignee_id or "").strip() or None
         if aid:
             u = await db.users.find_one({"id": aid}, {"_id": 0, "id": 1})
@@ -598,6 +609,8 @@ async def post_message(
     ticket = await db.tickets.find_one({"id": tid}, {"_id": 0})
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    if is_own_work_role(user) and ticket.get("assignee_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Not allowed to reply on this ticket")
     form = await request.form()
     body = str(form.get("body") or "")
     visibility = str(form.get("visibility") or "public")

@@ -77,8 +77,8 @@ PARTY_MAP = {
 }
 
 PLAN_PRODUCT = {
-    "annual": "TH Cloud — Growth Annual",
-    "monthly": "TH Cloud — Growth",
+    "annual": "TechHind Solar CRM — Annual",
+    "monthly": "TechHind Solar CRM — Monthly",
 }
 
 
@@ -447,12 +447,16 @@ async def phase_parties(commit: bool, stats: Stats) -> dict:
             "plan_name": product["name"],
             "billing_cycle": product.get("billing_cycle") or ("yearly" if row["type"] == "annual" else "monthly"),
             "price": product.get("price") or 0,
+            "price_includes_gst": True,
             "tax_rate": product.get("tax_rate") or 18,
             "status": "active",
+            "start_on": row["start"],
             "start_date": row["start"],
             "end_date": end,
             "next_renewal_on": next_renewal,
             "seats": 1,
+            "auto_renew": True,
+            "mrr": round((product.get("price") or 0) / max(months, 1), 2),
             "notes": f"Cutover from ved.xlsx; referred_by={row.get('referred_by')}",
             "cutover_key": cut_key,
             "created_at": iso_now(),

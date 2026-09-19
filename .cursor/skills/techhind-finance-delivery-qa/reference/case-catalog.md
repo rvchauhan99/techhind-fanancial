@@ -6,7 +6,7 @@ Distilled from `docs/PROD-READINESS-SIGN-OFF.md`, `docs/E2E-SIGN-OFF.md`, and `t
 
 | Group | IDs | Focus |
 |-------|-----|-------|
-| Auth / RBAC | AUTH-01 … AUTH-06, AUTH-2FA-01, AUTH-AUDIT-01 | Login, lockout, roles, TOTP, audit RBAC |
+| Auth / RBAC | AUTH-01 … AUTH-06, AUTH-2FA-01, AUTH-2FA-02, AUTH-AUDIT-01, USR-01 … USR-03 | Login, lockout, roles, TOTP+QR, first-login password, audit RBAC |
 | Settings | SET-01 … SET-04, SET-R2-01 | Company, masters, branding, `/ready` R2 |
 | Catalog / renewals | CAT-01 … CAT-05 | Customers, products, subscriptions, renewal email |
 | GST invoices / payments | INV-01 … INV-10 (+06b), INV-DN-01, INV-TDS-01, INV-CONCUR-01, INV-PAY-DEL-01 | GST, PDF, CN/DN, TDS, concurrency, payment reverse |
@@ -17,13 +17,13 @@ Distilled from `docs/PROD-READINESS-SIGN-OFF.md`, `docs/E2E-SIGN-OFF.md`, and `t
 | Dashboard / aging | DASH-01 … DASH-04 | KPIs, AR/AP aging |
 | Import / reports / period | OPS-01 … OPS-06, OPS-PERIOD-DATE, OPS-IMPORT-PAY-01 | CSV, pack, GSTR, period lock, payment import txn |
 | Support tickets | SUP-01 … SUP-04, SUP-10 … SUP-16 | Manual create/reply/status; bridge key; internal notes stripped; support_agent write; assignee/mine/SLA; email mock; Solar status filter + file download |
-| Org RBAC | RBAC-01 … RBAC-04 | Seed roles/menus; `/rbac/me` menus; developer finance 403; role menu update |
+| Org RBAC | RBAC-01 … RBAC-04, RBAC-FL-01 … RBAC-FL-03 | Seed roles/menus; `/rbac/me` menus; developer finance 403; freelancer tasks+tickets only |
 | Work mgmt | WRK-01 … WRK-05 | Project+task CRUD; assignee any user; activity; viewer create 403; dashboard/report |
 | Task module Pro | TSK-01 … TSK-10 | Types/observers; start/complete; board/deadline; checklist; attachments; reminders; quick testing; viewer 403; reassign manage |
 
 ## Browser routes (16+)
 
-login, dashboard, subscriptions, invoices, invoice detail (+ Activity panel), expenses, **bank ledger** (`/banks`), settings, imports, accountant-pack, period-close, aging, customers, products, vendors, payments, audit (admin/accountant only), **support tickets** (`/tickets`), **projects / tasks (list|kanban|deadline) / task detail / work-report / roles**.
+login, dashboard, subscriptions, invoices, invoice detail (+ Activity panel), expenses, **bank ledger** (`/banks`), settings (Users + Security→profile), **profile** (`/profile`), imports, accountant-pack, period-close, aging, customers, products, vendors, payments, audit (admin/accountant only), **support tickets** (`/tickets`), **projects / tasks (list|kanban|deadline) / task detail / work-report / roles**.
 
 Default web for local QA when `:3000` is busy: `WEB_BASE=http://localhost:3011`.
 

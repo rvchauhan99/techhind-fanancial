@@ -30,6 +30,16 @@ Draft, Pending Approval, Approved/Locked, Partially Paid, Paid, Overdue, Cancell
 
 All primary buttons, tabs, inputs, filters, KPIs must have kebab-case `data-testid` (see `frontend/src/constants/testIds/`).
 
+## List filters (FilterBar)
+
+- Shared: `frontend/src/components/filters/FilterBar.jsx` + `useListFilters` (`hooks/useListFilters.js`)
+- Field types: text, number, number_range, date, date_range, select, multi_select, toggle
+- Persistence: **URL query params only** (shareable / back-button); no localStorage
+- Dense: h-8 controls, 11px labels, tabs/view chips **above** FilterBar
+- Backend: `backend/list_query.py` helpers (`apply_q`, `apply_date_range`, `apply_amount_range`, …)
+- Convention: `date_from`/`date_to` on primary date; prefixed keys for secondary ranges (`renewal_from`, `due_from`)
+- Filter controls use `data-testid="filter-{key}"`; clear = `filter-clear-btn`
+
 ## PDF branding
 
 Official TechHind tax invoice layout: company header + GSTIN, billed/shipped to, HSN lines, tax summary, amount in words, bank details, signatory. Spec in `docs/design-guidelines.json` → `branded_pdf_spec`.
