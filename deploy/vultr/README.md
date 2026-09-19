@@ -1,0 +1,73 @@
+# TechHind Finance — Vultr backend deploy
+
+**Scope:** FastAPI on Vultr only. **No MongoDB on Vultr** — Atlas credentials in `backend/.env` / `.env.production`. Frontend on Vercel (`admin.techhind.in`).
+
+## Hosts
+
+| Host | Role |
+|------|------|
+| `api.techhind.in` | Shared **Caddy** (calling-crm stack) → host `:8010` |
+| `admin.techhind.in` | Vercel (CRA) |
+
+This VPS already binds **443** to Caddy and **80** to another Docker app. Do **not** install host nginx/certbot for this API — add a Caddy site block instead.
+
+Default SSH: `mealhq-vultr` → `root@139.84.223.174`.
+
+App path: `/opt/techhind-finance/` (uvicorn `0.0.0.0:8010`). UFW must allow `8010/tcp` so Docker Caddy can reach the host API.
+
+## Env (local, never commit)
+
+```bash
+python3 deploy/vultr/make_prod_env.py
+# writes backend/.env.production with:
+#   ENV=production
+#   REQUIRE_MONGO_TRANSACTIONS=true
+#   SECURE_COOKIES=true
+#   FRONTEND_URL=https://admin.techhind.in
+#   MONGO_* / BUCKET_* / BREVO_* from backend/.env (Atlas)
+```
+
+## Deploy
+
+```bash
+chmod +x deploy/vultr/deploy.sh
+./deploy/vultr/deploy.sh mealhq-vultr
+```
+
+## DNS
+
+1. `api.techhind.in` **A** → `139.84.223.174` (or Cloudflare orange-cloud + Full SSL).
+2. `admin.techhind.in` → Vercel.
+
+If Cloudflare Full (strict) fails ACME, switch the Caddy block to `tls internal` like `api.mealhq.ca`.
+
+## Atlas Network Access (required)
+
+Mongo is **Atlas only**. From this VPS, Atlas currently rejects connections until the IP is allowlisted:
+
+1. Atlas → Network Access → **Add IP Address**
+2. Enter `139.84.223.174/32` (Vultr public IP for `mealhq-vultr`)
+3. Confirm, wait ~1 minute, then:
+
+```bash
+ssh mealhq-vultr 'systemctl restart techhind-finance'
+curl -sS http://127.0.0.1:8010/ready   # on server
+```
+
+Without this step, uvicorn stays stuck or `/ready` fails with SSL / server selection errors.
+
+## Vercel
+
+| Env | Value |
+|-----|--------|
+| `REACT_APP_BACKEND_URL` | `https://api.techhind.in` |
+
+No trailing slash. Redeploy after setting.
+
+## Smoke
+
+```bash
+curl -sS http://127.0.0.1:8010/health   # on server
+curl -sS https://api.techhind.in/health
+curl -sS https://api.techhind.in/ready
+```

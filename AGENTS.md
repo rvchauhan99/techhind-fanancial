@@ -2,7 +2,7 @@
 
 **TechHind Company Finance (TCF)** — standalone single-company GST finance app (INR, FY Apr–Mar, series `TH/{FY}/{SEQ}`).
 
-**Last synced:** 2026-09-19 — Production cutover pack (`scripts/prod_bootstrap`, `scripts/cutover_import`; `seed_all` QA-only; HDFC statement → ledger ₹2,09,174.04). Prior: Bank ledger BANK-01…11; Support Module Pro + Task Pro + Org RBAC.
+**Last synced:** 2026-09-19 — Vultr API deploy (`deploy/vultr`, Caddy `api.techhind.in` → `:8010`, Atlas only). Prior: production cutover pack; bank ledger BANK-01…11.
 
 ## Not Solar CRM
 

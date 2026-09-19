@@ -1,0 +1,23 @@
+[Unit]
+Description=TechHind Company Finance API
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/techhind-finance/backend
+EnvironmentFile=/opt/techhind-finance/backend/.env
+# Port 8000 is taken by calling-crm — use 8010.
+# Bind 0.0.0.0 so shared Caddy (Docker host.docker.internal) can reach the API
+# (127.0.0.1 is not reachable from containers via host-gateway).
+ExecStart=/opt/techhind-finance/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8010 --workers 2
+Restart=always
+RestartSec=5
+Environment=PATH=/opt/techhind-finance/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

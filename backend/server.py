@@ -39,8 +39,13 @@ async def lifespan(app: FastAPI):
     from indexes import ensure_indexes
     from seed import seed_all
 
-    await ensure_indexes()
-    await seed_all()
+    try:
+        await ensure_indexes()
+        await seed_all()
+    except Exception as e:
+        logger.error(
+            "Mongo startup failed (check Atlas Network Access for this host IP): %s", e
+        )
     try:
         storage.init_storage()
         logger.info("Object storage initialized backend=%s", storage.active_backend())

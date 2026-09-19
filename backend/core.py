@@ -19,7 +19,11 @@ if not mongo_url:
 _db_name = os.environ.get("DB_NAME") or os.environ.get("MONGO_DATABASE")
 if not _db_name:
     raise RuntimeError("Set DB_NAME or MONGO_DATABASE")
-client = AsyncIOMotorClient(mongo_url)
+client = AsyncIOMotorClient(
+    mongo_url,
+    serverSelectionTimeoutMS=10_000,
+    connectTimeoutMS=10_000,
+)
 db = client[_db_name]
 
 JWT_ALGORITHM = "HS256"

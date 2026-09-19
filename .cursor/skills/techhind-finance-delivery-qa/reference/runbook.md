@@ -92,3 +92,10 @@ WeasyPrint needs Homebrew pango/glib. On Apple Silicon, ensure `/opt/homebrew/li
 - `GET /api/activity?entity_type=&entity_id=` — entity activity history (same RBAC)
 - Support tickets: `/tickets` (Finance inbox). Solar bridge: `SUPPORT_SERVICE_KEY` + `/api/integrations/support/*`
 - Solar flag: `SUPPORT_TICKETS_ENABLED=false` until QA — see solar-api `.env.example`
+
+## Production deploy (Vultr API + Vercel FE)
+
+- Backend only on Vultr: see `deploy/vultr/README.md` (no Mongo on VPS — Atlas).
+- Frontend: Vercel + `deploy/vercel.env.example` (`REACT_APP_BACKEND_URL=https://api.techhind.in`).
+- DNS: `api.techhind.in` → Vultr `139.84.223.174`; `admin.techhind.in` → Vercel.
+- Atlas Network Access must include Vultr IP before `/ready` is green.
