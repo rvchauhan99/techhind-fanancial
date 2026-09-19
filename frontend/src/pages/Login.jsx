@@ -1,20 +1,32 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { useNavigate, Navigate, useSearchParams } from "react-router-dom";
 import { ShieldCheck, Lock, Mail, KeyRound } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { API_CONFIG_ERROR } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, user, loading } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
   const [needs2fa, setNeeds2fa] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("error") === "config" || API_CONFIG_ERROR) {
+      setError("API URL is not configured. Set REACT_APP_BACKEND_URL and redeploy.");
+    }
+  }, [searchParams]);
+
+  if (!loading && user) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   const submit = async (e) => {
     e.preventDefault();
@@ -97,7 +109,7 @@ export default function Login() {
               <p className="text-xs text-slate-500">Enter the 6-digit code from your authenticator app.</p>
             </div>
           )}
-          <Button data-testid="login-submit-button" type="submit" disabled={busy}
+          <Button data-testid="login-submit-button" type="submit" disabled={busy || API_CONFIG_ERROR}
             className="w-full bg-[#0F284E] hover:bg-[#17386D] text-white transition-colors">
             {busy ? "Signing in…" : needs2fa ? "Verify & sign in" : "Sign in"}
           </Button>

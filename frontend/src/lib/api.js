@@ -1,6 +1,8 @@
 import axios from "axios";
 
-export const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const BACKEND_URL = (process.env.REACT_APP_BACKEND_URL || "").replace(/\/$/, "");
+export const API_CONFIG_ERROR = !BACKEND_URL;
+export const API = API_CONFIG_ERROR ? "" : `${BACKEND_URL}/api`;
 
 const TOKEN_KEY = "tcf_token";
 let token = localStorage.getItem(TOKEN_KEY);
@@ -12,9 +14,33 @@ export const setToken = (t) => {
   else localStorage.removeItem(TOKEN_KEY);
 };
 
-const api = axios.create({ baseURL: API, withCredentials: true });
+function redirectToLogin() {
+  setToken(null);
+  if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+    window.location.href = "/login";
+  }
+}
+
+function isAuthMeUrl(url) {
+  const u = String(url || "");
+  return u.includes("/auth/me");
+}
+
+function isAuthUrl(url) {
+  const u = String(url || "");
+  return u.includes("/auth/");
+}
+
+const api = axios.create({
+  baseURL: API || undefined,
+  withCredentials: true,
+  timeout: 15000,
+});
 
 api.interceptors.request.use((cfg) => {
+  if (API_CONFIG_ERROR) {
+    return Promise.reject(new Error("REACT_APP_BACKEND_URL is not configured"));
+  }
   if (token) cfg.headers.Authorization = `Bearer ${token}`;
   return cfg;
 });
@@ -25,12 +51,19 @@ api.interceptors.response.use(
   (r) => r,
   async (err) => {
     const orig = err.config || {};
-    if (err.response?.status === 401 && !orig._retried && !orig.url?.includes("/auth/")) {
+    const status = err.response?.status;
+
+    if (status === 401 && isAuthMeUrl(orig.url)) {
+      redirectToLogin();
+      return Promise.reject(err);
+    }
+
+    if (status === 401 && !orig._retried && !isAuthUrl(orig.url)) {
       orig._retried = true;
       try {
         refreshing =
           refreshing ||
-          axios.post(`${API}/auth/refresh`, {}, { withCredentials: true });
+          axios.post(`${API}/auth/refresh`, {}, { withCredentials: true, timeout: 15000 });
         const r = await refreshing;
         refreshing = null;
         setToken(r.data.access_token);
@@ -38,8 +71,8 @@ api.interceptors.response.use(
         return axios(orig);
       } catch (e) {
         refreshing = null;
-        setToken(null);
-        if (window.location.pathname !== "/login") window.location.href = "/login";
+        redirectToLogin();
+        return Promise.reject(e);
       }
     }
     return Promise.reject(err);
@@ -47,6 +80,9 @@ api.interceptors.response.use(
 );
 
 export function apiError(e) {
+  if (API_CONFIG_ERROR) return "API URL is not configured (REACT_APP_BACKEND_URL)";
+  if (e?.code === "ECONNABORTED") return "Request timed out — check API connectivity";
+  if (!e?.response && e?.message) return e.message;
   const detail = e?.response?.data?.detail;
   if (detail == null) return e?.message || "Something went wrong";
   if (typeof detail === "string") return detail;
