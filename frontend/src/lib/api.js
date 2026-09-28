@@ -21,14 +21,9 @@ function redirectToLogin() {
   }
 }
 
-function isAuthMeUrl(url) {
+function skipsTokenRefresh(url) {
   const u = String(url || "");
-  return u.includes("/auth/me");
-}
-
-function isAuthUrl(url) {
-  const u = String(url || "");
-  return u.includes("/auth/");
+  return u.includes("/auth/login") || u.includes("/auth/refresh");
 }
 
 const api = axios.create({
@@ -53,29 +48,38 @@ api.interceptors.response.use(
     const orig = err.config || {};
     const status = err.response?.status;
 
-    if (status === 401 && isAuthMeUrl(orig.url)) {
+    if (status !== 401 || orig._retried || skipsTokenRefresh(orig.url)) {
+      return Promise.reject(err);
+    }
+
+    orig._retried = true;
+    let access = null;
+    try {
+      refreshing =
+        refreshing ||
+        axios.post(`${API}/auth/refresh`, {}, { withCredentials: true, timeout: 15000 });
+      const r = await refreshing;
+      refreshing = null;
+      access = r.data?.access_token || null;
+    } catch (e) {
+      refreshing = null;
+      redirectToLogin();
+      return Promise.reject(e);
+    }
+
+    if (!access) {
       redirectToLogin();
       return Promise.reject(err);
     }
 
-    if (status === 401 && !orig._retried && !isAuthUrl(orig.url)) {
-      orig._retried = true;
-      try {
-        refreshing =
-          refreshing ||
-          axios.post(`${API}/auth/refresh`, {}, { withCredentials: true, timeout: 15000 });
-        const r = await refreshing;
-        refreshing = null;
-        setToken(r.data.access_token);
-        orig.headers = { ...(orig.headers || {}), Authorization: `Bearer ${r.data.access_token}` };
-        return axios(orig);
-      } catch (e) {
-        refreshing = null;
-        redirectToLogin();
-        return Promise.reject(e);
-      }
+    setToken(access);
+    orig.headers = { ...(orig.headers || {}), Authorization: `Bearer ${access}` };
+    try {
+      return await axios(orig);
+    } catch (e) {
+      if (e?.response?.status === 401) redirectToLogin();
+      return Promise.reject(e);
     }
-    return Promise.reject(err);
   }
 );
 

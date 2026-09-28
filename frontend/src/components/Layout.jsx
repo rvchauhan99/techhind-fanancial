@@ -9,6 +9,7 @@ import {
 import api from "../lib/api"
 import { fmtINR } from "../lib/format"
 import { useAuth } from "../context/AuthContext"
+import { NotificationBell } from "./NotificationBell"
 
 const ICON_MAP = {
   LayoutDashboard,
@@ -239,7 +240,10 @@ export default function Layout({ children, title, actions }) {
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-14 bg-white/95 backdrop-blur border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-40">
           <h1 className="text-lg font-bold tracking-tight text-slate-900 font-heading" data-testid="page-title">{title}</h1>
-          <div className="flex items-center gap-2">{actions}</div>
+          <div className="flex items-center gap-2">
+            <NotificationBell />
+            {actions}
+          </div>
         </header>
         <ActionStrips />
         <main className="flex-1 overflow-y-auto p-5 md:p-6">

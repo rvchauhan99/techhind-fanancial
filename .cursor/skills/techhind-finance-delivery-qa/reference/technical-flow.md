@@ -20,8 +20,9 @@
 | `backend/pdf.py` | Branded PDF |
 | `backend/storage.py` | R2 → local FS |
 | `backend/email_service.py` | Brevo or mock |
+| `backend/notifications.py` | Per-user inbox fan-out and due-reminder claim |
 | `backend/seed.py` | Demo / seed data |
-| `backend/routers/*.py` | auth, settings, catalog, billing, payables, banks, dashboard, periods, reports, imports |
+| `backend/routers/*.py` | auth, settings, catalog, billing, payables, banks, dashboard, periods, reports, imports, tickets, rbac, work, notifications |
 | `backend/bank_ledger.py` | Bank statement engine (post/reverse/running balance) |
 
 ## Frontend layout
@@ -31,7 +32,7 @@
 | `frontend/src/App.js` | Routes |
 | `frontend/src/lib/api.js` | Axios client |
 | `frontend/src/context/AuthContext.jsx` | Auth state |
-| `frontend/src/components/Layout.jsx` | Dense left nav + renewals strip |
+| `frontend/src/components/Layout.jsx` | Dense left nav, renewals strip, notification bell |
 | `frontend/src/pages/*` | Feature pages |
 
 ## Local ports

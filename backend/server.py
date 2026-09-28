@@ -60,8 +60,21 @@ async def lifespan(app: FastAPI):
         )
     except Exception as e:
         logger.error("Email service init failed: %s", e)
-    yield
-    client.close()
+    import asyncio
+    from notifications import reminder_sweep_loop
+
+    stop_reminders = asyncio.Event()
+    sweep_task = asyncio.create_task(reminder_sweep_loop(stop_reminders))
+    try:
+        yield
+    finally:
+        stop_reminders.set()
+        sweep_task.cancel()
+        try:
+            await sweep_task
+        except asyncio.CancelledError:
+            pass
+        client.close()
 
 
 app = FastAPI(title="TechHind Company Finance", lifespan=lifespan)
@@ -79,8 +92,10 @@ from routers import tickets as tickets_router
 from routers import rbac as rbac_router
 from routers import work as work_router
 from routers import banks as banks_router
+from routers import notifications as notifications_router
 
 app.include_router(auth_router.router)
+app.include_router(notifications_router.router)
 app.include_router(settings_router.router)
 app.include_router(catalog_router.router)
 app.include_router(billing_router.router)

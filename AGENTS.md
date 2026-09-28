@@ -2,7 +2,7 @@
 
 **TechHind Company Finance (TCF)** — standalone single-company GST finance app (INR, FY Apr–Mar, series `TH/{FY}/{SEQ}`).
 
-**Last synced:** 2026-09-19 — Bank ledger statement newest-first; list-sort conventions in design annex. Prior: Profile/first-login/freelancer.
+**Last synced:** 2026-09-28 — Shared notification inbox (header bell) for task, project, and ticket actions. Prior: Bank ledger statement newest-first; list-sort conventions in design annex.
 
 ## Not Solar CRM
 

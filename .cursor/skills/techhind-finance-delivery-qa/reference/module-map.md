@@ -16,9 +16,10 @@
 | Reports / GSTR / pack | `routers/reports.py` | `/accountant-pack`, `/reports/month-summary`, `/reports/gstr1`, `/reports/gstr3b` | — | OPS-01…06 |
 | CSV import | `routers/imports.py` | `/imports` | (targets vary) | OPS-01…02, OPS-IMPORT-PAY-01 |
 | Audit / activity | `routers/dashboard.py` (`/audit`, `/activity`); `core.audit` | `/audit`; Activity panel on invoice detail | `audit_logs` | AUTH-AUDIT-01, AUD-01, AUD-ACT-01 |
-| Support tickets | `routers/tickets.py` | `/tickets`, `/tickets/:id` | `tickets`, `ticket_messages`, `notifications` | SUP-01…04, SUP-10…16 (ops: assignee/category/SLA/internal notes + Solar bridge files) |
+| Support tickets | `routers/tickets.py` | `/tickets`, `/tickets/:id` | `tickets`, `ticket_messages` | SUP-01…04, SUP-10…16 (ops: assignee/category/SLA/internal notes + Solar bridge files). Inbox rows go through `notifications.notify_users`. |
 | Org RBAC | `routers/rbac.py`, `rbac_seed.py` | `/roles` (nav from `/rbac/me`) | `org_roles`, `menus`, `role_menus` | RBAC-01…, RBAC-FL-01…03 |
-| Work (projects / tasks) | `routers/work.py` | `/projects`, `/projects/:id`, `/tasks`, `/tasks/:id`, `/work-report` | `projects`, `tasks`, `work_activity` | WRK-01…, TSK-01… (List/Kanban/Deadline, checklist, files, observers, reminders) |
+| Work (projects / tasks) | `routers/work.py` | `/projects`, `/projects/:id`, `/tasks`, `/tasks/:id`, `/work-report` | `projects`, `tasks`, `work_activity` | WRK-01…, TSK-01… (List/Kanban/Deadline, checklist, files, observers, reminders). Task/project actions fan out to the inbox (assignee, observers, creator, or project owner and members, minus the actor). Checklist edits stay on `work_activity` only. |
+| Notifications | `notifications.py`, `routers/notifications.py` | Header bell on every authenticated page | `notifications` (`user_id`, `read`, `source`, `type`, `title`, `body`, `entity_type`, `entity_id`, `href`, `actor_id`, `actor_name`, `ts`; `ticket_id` when source is ticket) | NTF-01…04. `GET /api/notifications`, `GET /api/notifications/unread-count`, `POST /api/notifications/{id}/read`, `POST /api/notifications/read-all`. Due task reminders claimed by lifespan sweep (`reminder_sent`). |
 | Email log | `email_service.py` | — | `email_log` | INV-05, CAT-05 |
 | Indexes / seed | `indexes.py`, `seed.py` | — | (all) | `make seed-qa` (QA DB suffix only) |
 | Prod cutover | `scripts/prod_bootstrap.py`, `scripts/cutover_import.py` | — | (bootstrap + import) | CUTOVER-01…05 |

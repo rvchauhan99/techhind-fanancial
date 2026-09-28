@@ -103,6 +103,90 @@ async def _work_activity(
     return _strip(row)
 
 
+def _task_audience(*tasks: dict) -> list:
+    ids = []
+    for task in tasks:
+        if not task:
+            continue
+        ids.append(task.get("assignee_id"))
+        ids.append(task.get("created_by"))
+        ids.extend(task.get("observer_ids") or [])
+    return ids
+
+
+def _project_audience(*projects: dict) -> list:
+    ids = []
+    for project in projects:
+        if not project:
+            continue
+        ids.append(project.get("owner_id"))
+        ids.append(project.get("created_by"))
+        ids.extend(project.get("member_ids") or [])
+    return ids
+
+
+async def _inbox(
+    user: dict,
+    user_ids: list,
+    *,
+    source: str,
+    ntype: str,
+    title: str,
+    body: str,
+    entity_type: str,
+    entity_id: str,
+) -> None:
+    from notifications import notify_users
+
+    href = f"/tasks/{entity_id}" if entity_type == "task" else f"/projects/{entity_id}"
+    await notify_users(
+        user_ids,
+        actor_id=user.get("id"),
+        actor_name=user.get("name") or "",
+        source=source,
+        ntype=ntype,
+        title=title,
+        body=body,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        href=href,
+    )
+
+
+def _task_notice(diff: dict, number: str) -> tuple[str, str] | None:
+    if "status" in diff:
+        change = diff["status"]
+        return "status_changed", f"Status {change.get('old')} → {change.get('new')} on {number}"
+    if "assignee_id" in diff:
+        return "assignee_changed", f"Reassigned {number}"
+    if "observer_ids" in diff:
+        old = set(diff["observer_ids"].get("old") or [])
+        new = set(diff["observer_ids"].get("new") or [])
+        kind = "observer_added" if new - old else "observer_removed"
+        return kind, f"Observers updated on {number}"
+    if "due_date" in diff:
+        return "due_date_changed", f"Due date changed on {number}"
+    if "priority" in diff:
+        return "priority_changed", f"Priority changed on {number}"
+    if "reminder_at" in diff:
+        return "reminder_set", f"Reminder updated on {number}"
+    return None
+
+
+def _project_notice(diff: dict, number: str) -> tuple[str, str] | None:
+    if "status" in diff:
+        change = diff["status"]
+        return "status_changed", f"Status {change.get('old')} → {change.get('new')} on {number}"
+    if "owner_id" in diff:
+        return "owner_changed", f"Owner changed on {number}"
+    if "member_ids" in diff:
+        old = set(diff["member_ids"].get("old") or [])
+        new = set(diff["member_ids"].get("new") or [])
+        kind = "member_added" if new - old else "member_removed"
+        return kind, f"Members updated on {number}"
+    return None
+
+
 async def _user_map(ids: list) -> dict:
     ids = [i for i in ids if i]
     if not ids:
@@ -401,6 +485,12 @@ async def create_project(body: ProjectIn, user=Depends(require_capability("can_w
     }
     await db.projects.insert_one(doc)
     await _work_activity(user, "project", doc["id"], "project_created", f"Created {number}")
+    await _inbox(
+        user, _project_audience(doc),
+        source="project", ntype="project_created",
+        title=f"Project {number}", body=doc["name"],
+        entity_type="project", entity_id=doc["id"],
+    )
     return await _enrich_project(doc)
 
 
@@ -445,6 +535,15 @@ async def patch_project(
         user, "project", project_id, "project_updated",
         f"Updated {existing.get('number')}", diff=diff,
     )
+    notice = _project_notice(diff, existing.get("number") or "")
+    if notice:
+        ntype, title = notice
+        await _inbox(
+            user, _project_audience(existing, after),
+            source="project", ntype=ntype, title=title,
+            body=after.get("name") or "",
+            entity_type="project", entity_id=project_id,
+        )
     return await _enrich_project(await db.projects.find_one({"id": project_id}, {"_id": 0}))
 
 
@@ -680,6 +779,15 @@ async def create_task(body: TaskIn, user=Depends(require_capability("can_work_wr
             f"Reminder {body.reminder_at}",
             diff={"reminder_at": {"old": None, "new": body.reminder_at}},
         )
+    if assignee_id or observers:
+        ntype = "task_assigned" if assignee_id else "observer_added"
+        title = f"Assigned {number}" if assignee_id else f"Watching {number}"
+        await _inbox(
+            user, _task_audience(doc),
+            source="task", ntype=ntype, title=title,
+            body=doc["title"],
+            entity_type="task", entity_id=doc["id"],
+        )
     return await _enrich_task(doc)
 
 
@@ -761,6 +869,15 @@ async def patch_task(
         user, "task", task_id, action,
         f"Updated {existing.get('number')}", diff=diff,
     )
+    notice = _task_notice(diff, existing.get("number") or "")
+    if notice:
+        ntype, title = notice
+        await _inbox(
+            user, _task_audience(existing, after),
+            source="task", ntype=ntype, title=title,
+            body=after.get("title") or "",
+            entity_type="task", entity_id=task_id,
+        )
     return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
 
 
@@ -781,6 +898,13 @@ async def start_task(task_id: str, user=Depends(require_capability("can_work_wri
     await _work_activity(
         user, "task", task_id, "task_started", f"Started {existing.get('number')}",
         diff={"status": {"old": existing.get("status"), "new": "in_progress"}},
+    )
+    await _inbox(
+        user, _task_audience(existing),
+        source="task", ntype="task_started",
+        title=f"Started {existing.get('number')}",
+        body=existing.get("title") or "",
+        entity_type="task", entity_id=task_id,
     )
     return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
 
@@ -805,6 +929,13 @@ async def complete_task(task_id: str, user=Depends(require_capability("can_work_
         user, "task", task_id, "task_completed", f"Completed {existing.get('number')}",
         diff={"status": {"old": existing.get("status"), "new": "done"}},
     )
+    await _inbox(
+        user, _task_audience(existing),
+        source="task", ntype="task_completed",
+        title=f"Completed {existing.get('number')}",
+        body=existing.get("title") or "",
+        entity_type="task", entity_id=task_id,
+    )
     return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
 
 
@@ -828,6 +959,17 @@ async def put_observers(
         f"Observers updated ({len(new)})",
         diff={"observer_ids": {"old": old, "new": new}},
     )
+    if set(new) != set(old):
+        added = set(new) - set(old)
+        merged = {**existing, "observer_ids": new}
+        await _inbox(
+            user, _task_audience(existing, merged),
+            source="task",
+            ntype="observer_added" if added else "observer_removed",
+            title=f"Observers updated on {existing.get('number')}",
+            body=existing.get("title") or "",
+            entity_type="task", entity_id=task_id,
+        )
     return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
 
 
@@ -899,6 +1041,13 @@ async def upload_task_attachment(
         f"Attached {file.filename}",
         diff={"attachment_id": {"old": None, "new": fid}},
     )
+    await _inbox(
+        user, _task_audience(existing),
+        source="task", ntype="attachment_added",
+        title=f"File on {existing.get('number')}",
+        body=file.filename or "",
+        entity_type="task", entity_id=task_id,
+    )
     return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
 
 
@@ -921,6 +1070,13 @@ async def delete_task_attachment(
         user, "task", task_id, "attachment_removed",
         "Attachment removed",
         diff={"attachment_id": {"old": file_id, "new": None}},
+    )
+    await _inbox(
+        user, _task_audience(existing),
+        source="task", ntype="attachment_removed",
+        title=f"File removed on {existing.get('number')}",
+        body="",
+        entity_type="task", entity_id=task_id,
     )
     return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
 
@@ -946,6 +1102,14 @@ async def set_reminder(
         f"Reminder {body.reminder_at or 'cleared'}",
         diff={"reminder_at": {"old": old, "new": body.reminder_at}},
     )
+    await _inbox(
+        user, _task_audience(existing),
+        source="task",
+        ntype="reminder_set" if body.reminder_at else "reminder_cleared",
+        title=f"Reminder updated on {existing.get('number')}",
+        body=existing.get("title") or "",
+        entity_type="task", entity_id=task_id,
+    )
     return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
 
 
@@ -956,12 +1120,21 @@ async def project_comment(
     body: CommentIn,
     user=Depends(require_capability("can_work_write")),
 ):
-    if not await db.projects.find_one({"id": project_id}):
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    return await _work_activity(
+    row = await _work_activity(
         user, "project", project_id, "comment", "Comment added",
         comment=body.body.strip(),
     )
+    await _inbox(
+        user, _project_audience(project),
+        source="project", ntype="comment",
+        title=f"Comment on {project.get('number')}",
+        body=body.body.strip(),
+        entity_type="project", entity_id=project_id,
+    )
+    return row
 
 
 @router.post("/tasks/{task_id}/comments")
@@ -970,12 +1143,23 @@ async def task_comment(
     body: CommentIn,
     user=Depends(require_capability("can_work_write")),
 ):
-    if not await db.tasks.find_one({"id": task_id}):
+    task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    return await _work_activity(
+    if not _freelancer_can_access_task(task, user):
+        raise HTTPException(status_code=403, detail="Not allowed to comment on this task")
+    row = await _work_activity(
         user, "task", task_id, "comment", "Comment added",
         comment=body.body.strip(),
     )
+    await _inbox(
+        user, _task_audience(task),
+        source="task", ntype="comment",
+        title=f"Comment on {task.get('number')}",
+        body=body.body.strip(),
+        entity_type="task", entity_id=task_id,
+    )
+    return row
 
 
 @router.get("/activity")

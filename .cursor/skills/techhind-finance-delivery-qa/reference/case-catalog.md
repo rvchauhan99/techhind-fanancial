@@ -20,6 +20,7 @@ Distilled from `docs/PROD-READINESS-SIGN-OFF.md`, `docs/E2E-SIGN-OFF.md`, and `t
 | Org RBAC | RBAC-01 … RBAC-04, RBAC-FL-01 … RBAC-FL-03 | Seed roles/menus; `/rbac/me` menus; developer finance 403; freelancer tasks+tickets only |
 | Work mgmt | WRK-01 … WRK-05 | Project+task CRUD; assignee any user; activity; viewer create 403; dashboard/report |
 | Task module Pro | TSK-01 … TSK-10 | Types/observers; start/complete; board/deadline; checklist; attachments; reminders; quick testing; viewer 403; reassign manage |
+| Notifications | NTF-01 … NTF-04 | Fan-out excludes actor; comment reaches assignee and observer; user cannot read another inbox row; reminder claim sets `reminder_sent` once |
 
 ## Browser routes (16+)
 

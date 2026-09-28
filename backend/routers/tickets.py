@@ -221,19 +221,18 @@ async def _notify(
     title: str,
     body: str = "",
 ) -> None:
-    if not user_id:
-        return
-    await db.notifications.insert_one(
-        {
-            "id": new_id(),
-            "user_id": user_id,
-            "ticket_id": ticket_id,
-            "type": ntype,
-            "title": title,
-            "body": body,
-            "read": False,
-            "ts": iso_now(),
-        }
+    from notifications import notify_users
+
+    await notify_users(
+        [user_id],
+        source="ticket",
+        ntype=ntype,
+        title=title,
+        body=body,
+        entity_type="ticket",
+        entity_id=ticket_id,
+        href=f"/tickets/{ticket_id}",
+        ticket_id=ticket_id,
     )
 
 

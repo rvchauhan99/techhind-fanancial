@@ -30,6 +30,8 @@ Draft, Pending Approval, Approved/Locked, Partially Paid, Paid, Overdue, Cancell
 
 All primary buttons, tabs, inputs, filters, KPIs must have kebab-case `data-testid` (see `frontend/src/constants/testIds/`).
 
+Header notification bell: `notification-bell`, `notification-badge`, `notification-item`, `notification-mark-all`.
+
 ## List filters (FilterBar)
 
 - Shared: `frontend/src/components/filters/FilterBar.jsx` + `useListFilters` (`hooks/useListFilters.js`)
