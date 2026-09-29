@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
-import { ArrowLeft, Paperclip } from "lucide-react"
+import { ArrowLeft, Download, Eye, Paperclip } from "lucide-react"
 import { toast } from "sonner"
 import api, { apiError } from "../lib/api"
 import { fmtDateTime } from "../lib/format"
@@ -75,6 +75,42 @@ export default function TicketDetail() {
 
   const handleRemoveQueued = (index) => {
     setFiles((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const fetchAttachmentBlob = async (att) => {
+    if (!att?.storage_path) {
+      throw new Error("Missing file path")
+    }
+    const res = await api.get(`/files/${att.storage_path}`, { responseType: "blob" })
+    const mime = att.mime || res.data?.type || "application/octet-stream"
+    return new Blob([res.data], { type: mime })
+  }
+
+  const handleViewAttachment = async (att) => {
+    try {
+      const blob = await fetchAttachmentBlob(att)
+      const url = window.URL.createObjectURL(blob)
+      window.open(url, "_blank", "noopener,noreferrer")
+      setTimeout(() => window.URL.revokeObjectURL(url), 60_000)
+    } catch (err) {
+      toast.error(apiError(err) || "Unable to open file")
+    }
+  }
+
+  const handleDownloadAttachment = async (att) => {
+    try {
+      const blob = await fetchAttachmentBlob(att)
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = att.name || "attachment"
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      toast.error(apiError(err) || "Download failed")
+    }
   }
 
   const handleReply = async (e) => {
@@ -249,19 +285,48 @@ export default function TicketDetail() {
                 </div>
                 <div className="text-sm text-slate-800 whitespace-pre-wrap">{m.body}</div>
                 {(m.attachments || []).length > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-2">
-                    {m.attachments.map((a) => (
-                      <a
-                        key={a.file_id}
-                        href={`/api/files/${a.storage_path}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-[11px] text-[#0066CC] border border-slate-200 rounded px-1.5 py-0.5"
-                      >
-                        <Paperclip className="w-3 h-3" />
-                        {a.name}
-                      </a>
-                    ))}
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {m.attachments.map((a) => {
+                      const isImage = String(a.mime || "").startsWith("image/")
+                      return (
+                        <div
+                          key={a.file_id}
+                          className="inline-flex items-center gap-0.5 text-[11px] border border-slate-200 rounded px-1 py-0.5 bg-white"
+                          data-testid={`ticket-file-${a.file_id}`}
+                        >
+                          <Paperclip className="w-3 h-3 text-slate-400 shrink-0" />
+                          <button
+                            type="button"
+                            onClick={() => handleViewAttachment(a)}
+                            className="max-w-[10rem] truncate text-[#0066CC] hover:underline px-0.5"
+                            title={isImage ? `View ${a.name}` : `Open ${a.name}`}
+                            data-testid={`ticket-file-view-${a.file_id}`}
+                          >
+                            {a.name}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleViewAttachment(a)}
+                            className="p-0.5 rounded text-slate-500 hover:bg-slate-100 hover:text-[#0066CC]"
+                            aria-label={`View ${a.name || "attachment"}`}
+                            title="View"
+                            data-testid={`ticket-file-eye-${a.file_id}`}
+                          >
+                            <Eye className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadAttachment(a)}
+                            className="p-0.5 rounded text-slate-500 hover:bg-slate-100 hover:text-[#0066CC]"
+                            aria-label={`Download ${a.name || "attachment"}`}
+                            title="Download"
+                            data-testid={`ticket-file-download-${a.file_id}`}
+                          >
+                            <Download className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
