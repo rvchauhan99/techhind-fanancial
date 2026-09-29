@@ -127,13 +127,18 @@ def tiny_png() -> bytes:
 
 
 def ensure_support_agent(admin_cookie: str) -> str | None:
-    """Return cookie for support_agent user (create/update if needed)."""
+    """Return cookie for support_agent user (create/update if needed).
+
+    Admin create/reset leaves must_change_password=True; complete first-login
+    change-password so ticket write APIs are usable (SUP-12).
+    """
     st, users, _ = req("GET", "/api/users", cookie=admin_cookie)
     if st != 200:
         return None
     agent = next((u for u in users if u.get("role") == "support_agent"), None)
     email = "support.agent@techhind.in"
-    password = "Support@123"
+    temp_password = "Support@123"
+    final_password = "Support@QA456!"
     if not agent:
         st, created, _ = req(
             "POST",
@@ -141,33 +146,85 @@ def ensure_support_agent(admin_cookie: str) -> str | None:
             {
                 "name": "Support Agent QA",
                 "email": email,
-                "password": password,
+                "password": temp_password,
                 "role": "support_agent",
             },
             cookie=admin_cookie,
         )
         if st not in (200, 201):
-            # try update existing email
             existing = next((u for u in users if u.get("email") == email), None)
             if existing:
                 req("PATCH", f"/api/users/{existing['id']}", {"role": "support_agent"}, cookie=admin_cookie)
+                agent = existing
             else:
                 print(f"WARN create support_agent failed: {st} {created}")
                 return None
+        else:
+            agent = created if isinstance(created, dict) else None
     else:
         email = agent.get("email") or email
-        # reset password if needed via admin
+
+    agent_id = (agent or {}).get("id")
+    if agent_id:
         try:
-            req("POST", f"/api/users/{agent['id']}/reset-password", {"password": password}, cookie=admin_cookie)
+            req("POST", f"/api/users/{agent_id}/reset-password", {"password": temp_password}, cookie=admin_cookie)
         except Exception:
             pass
-        # some APIs use different reset path
-        req("PATCH", f"/api/users/{agent['id']}", {"role": "support_agent"}, cookie=admin_cookie)
+        req("PATCH", f"/api/users/{agent_id}", {"role": "support_agent"}, cookie=admin_cookie)
+
     try:
-        return login(email, password)
+        cookie = login(email, temp_password)
     except Exception as e:
-        print(f"WARN support_agent login failed: {e}")
-        return None
+        # Reset may have failed; try final password from a prior run
+        try:
+            cookie = login(email, final_password)
+            return cookie
+        except Exception:
+            print(f"WARN support_agent login failed: {e}")
+            return None
+
+    st_me, me, _ = req("GET", "/api/auth/me", cookie=cookie)
+    needs_change = (st_me == 200 and me.get("must_change_password")) or st_me == 403
+    if not needs_change:
+        # Probe ticket write path; password_change_required blocks ticket APIs
+        st_probe, probe, _ = req("GET", "/api/tickets?limit=1", cookie=cookie)
+        if st_probe == 403 and (probe.get("detail") == "password_change_required" or "password" in str(probe.get("detail") or "").lower()):
+            needs_change = True
+
+    if needs_change:
+        st_ch, ch, _ = req(
+            "POST",
+            "/api/auth/change-password",
+            {"current_password": temp_password, "new_password": final_password},
+            cookie=cookie,
+        )
+        if st_ch != 200:
+            # Cookie may already be on final password
+            st_ch2, ch2, _ = req(
+                "POST",
+                "/api/auth/change-password",
+                {"current_password": final_password, "new_password": temp_password},
+                cookie=cookie,
+            )
+            if st_ch2 == 200:
+                st_ch3, ch3, _ = req(
+                    "POST",
+                    "/api/auth/change-password",
+                    {"current_password": temp_password, "new_password": final_password},
+                    cookie=cookie,
+                )
+                if st_ch3 != 200:
+                    print(f"WARN support_agent change-password failed: {st_ch} {ch} / {st_ch3} {ch3}")
+                    return None
+            else:
+                print(f"WARN support_agent change-password failed: {st_ch} {ch}")
+                return None
+        try:
+            cookie = login(email, final_password)
+        except Exception as e:
+            print(f"WARN support_agent re-login failed: {e}")
+            return None
+    return cookie
 
 
 def main():
