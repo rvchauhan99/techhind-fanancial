@@ -54,7 +54,7 @@ export default function PeriodClose() {
       <FilterBar schema={SCHEMA} values={values} setFilter={setFilter}
         clearFilters={clearFilters} activeCount={activeCount} testId="period-filters" />
       <div className="bg-white border border-slate-200 rounded-lg max-w-4xl">
-        <table className="w-full text-sm" data-testid="periods-table">
+        <table className="w-full text-sm pwa-table" data-testid="periods-table">
           <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
             <th className="text-left px-3 py-2">Period</th><th className="text-left px-3 py-2">State</th>
             <th className="text-left px-3 py-2">Last change</th><th className="text-right px-3 py-2">Actions</th></tr></thead>

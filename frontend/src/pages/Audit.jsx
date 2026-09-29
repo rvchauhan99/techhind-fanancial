@@ -29,7 +29,7 @@ export default function Audit() {
       <FilterBar schema={SCHEMA} values={values} setFilter={setFilter}
         clearFilters={clearFilters} activeCount={activeCount} testId="audit-filters" />
       <div className="bg-white border border-slate-200 rounded-lg">
-        <table className="w-full text-sm" data-testid="audit-table">
+        <table className="w-full text-sm pwa-table" data-testid="audit-table">
           <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
             <th className="text-left px-3 py-2">Timestamp</th><th className="text-left px-3 py-2">User</th>
             <th className="text-left px-3 py-2">Role</th><th className="text-left px-3 py-2">IP</th>

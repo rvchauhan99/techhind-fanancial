@@ -229,7 +229,7 @@ export default function Vendors() {
 
       {tab === "bills" && (
         <div className="bg-white border border-slate-200 rounded-lg">
-          <table className="w-full text-sm" data-testid="bills-table">
+          <table className="w-full text-sm pwa-table" data-testid="bills-table">
             <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
               <th className="text-left px-3 py-2">Bill No</th><th className="text-left px-3 py-2">Vendor</th>
               <th className="text-left px-3 py-2">Date</th><th className="text-left px-3 py-2">Due</th>
@@ -276,7 +276,7 @@ export default function Vendors() {
 
       {tab === "vendors" && (
         <div className="bg-white border border-slate-200 rounded-lg">
-          <table className="w-full text-sm" data-testid="vendors-table">
+          <table className="w-full text-sm pwa-table" data-testid="vendors-table">
             <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
               <th className="text-left px-3 py-2">Vendor</th><th className="text-left px-3 py-2">GSTIN</th>
               <th className="text-left px-3 py-2">State</th><th className="text-left px-3 py-2">Contact</th></tr></thead>
@@ -297,7 +297,7 @@ export default function Vendors() {
 
       {tab === "vpay" && (
         <div className="bg-white border border-slate-200 rounded-lg">
-          <table className="w-full text-sm" data-testid="vpay-table">
+          <table className="w-full text-sm pwa-table" data-testid="vpay-table">
             <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
               <th className="text-left px-3 py-2">Ref</th><th className="text-left px-3 py-2">Date</th>
               <th className="text-left px-3 py-2">Vendor</th><th className="text-left px-3 py-2">Method</th>
@@ -329,7 +329,7 @@ export default function Vendors() {
       <Dialog open={vOpen} onOpenChange={setVOpen}>
         <DialogContent className="max-w-xl bg-white" data-testid="vendor-dialog">
           <DialogHeader><DialogTitle className="font-heading">New Vendor</DialogTitle></DialogHeader>
-          <form onSubmit={saveVendor} className="grid grid-cols-2 gap-3">
+          <form onSubmit={saveVendor} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="col-span-2"><Label>Name *</Label>
               <Input data-testid="vendor-name-input" required value={vForm.name} onChange={(e) => setVForm({ ...vForm, name: e.target.value })} /></div>
             <div><Label>GSTIN</Label><Input value={vForm.gstin} onChange={(e) => setVForm({ ...vForm, gstin: e.target.value.toUpperCase() })} className="font-mono" /></div>
@@ -353,7 +353,7 @@ export default function Vendors() {
         <DialogContent className="max-w-3xl bg-white" data-testid="bill-dialog">
           <DialogHeader><DialogTitle className="font-heading">New Purchase Bill</DialogTitle></DialogHeader>
           <form onSubmit={saveBill} className="space-y-3">
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <div className="col-span-2"><Label>Vendor *</Label>
                 <Select value={bForm.vendor_id} onValueChange={(v) => setBForm({ ...bForm, vendor_id: v })}>
                   <SelectTrigger data-testid="bill-vendor-select"><SelectValue placeholder="Select vendor" /></SelectTrigger>
@@ -372,13 +372,13 @@ export default function Vendors() {
             <div className="border border-slate-200 rounded-md">
               <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-600">Lines</div>
               {bLines.map((l, i) => (
-                <div key={i} className="grid grid-cols-12 gap-2 px-3 py-2 border-b border-slate-100 last:border-0" data-testid={`bill-line-${i}`}>
-                  <Input className="col-span-5 h-8" placeholder="Description *" value={l.description} onChange={(e) => setBLines(bLines.map((x, xi) => xi === i ? { ...x, description: e.target.value } : x))} />
-                  <Input className="col-span-2 h-8 font-mono text-xs" placeholder="HSN/SAC" value={l.hsn_sac} onChange={(e) => setBLines(bLines.map((x, xi) => xi === i ? { ...x, hsn_sac: e.target.value } : x))} />
-                  <Input className="col-span-1 h-8 text-right font-mono" type="number" placeholder="Qty" value={l.qty} onChange={(e) => setBLines(bLines.map((x, xi) => xi === i ? { ...x, qty: e.target.value } : x))} />
-                  <Input className="col-span-2 h-8 text-right font-mono" type="number" step="0.01" placeholder="Rate" value={l.rate} onChange={(e) => setBLines(bLines.map((x, xi) => xi === i ? { ...x, rate: e.target.value } : x))} />
-                  <Input className="col-span-1 h-8 text-right font-mono" type="number" placeholder="GST%" value={l.tax_rate} onChange={(e) => setBLines(bLines.map((x, xi) => xi === i ? { ...x, tax_rate: e.target.value } : x))} />
-                  <button type="button" className="col-span-1 p-1 text-slate-400 hover:text-red-600" onClick={() => bLines.length > 1 && setBLines(bLines.filter((_, xi) => xi !== i))}><Trash2 className="w-3.5 h-3.5" /></button>
+                <div key={i} className="grid grid-cols-2 sm:grid-cols-12 gap-2 px-3 py-2 border-b border-slate-100 last:border-0" data-testid={`bill-line-${i}`}>
+                  <Input className="col-span-2 sm:col-span-5 h-8" placeholder="Description *" value={l.description} onChange={(e) => setBLines(bLines.map((x, xi) => xi === i ? { ...x, description: e.target.value } : x))} />
+                  <Input className="col-span-1 sm:col-span-2 h-8 font-mono text-xs" placeholder="HSN/SAC" value={l.hsn_sac} onChange={(e) => setBLines(bLines.map((x, xi) => xi === i ? { ...x, hsn_sac: e.target.value } : x))} />
+                  <Input className="col-span-1 sm:col-span-1 h-8 text-right font-mono" type="number" placeholder="Qty" value={l.qty} onChange={(e) => setBLines(bLines.map((x, xi) => xi === i ? { ...x, qty: e.target.value } : x))} />
+                  <Input className="col-span-1 sm:col-span-2 h-8 text-right font-mono" type="number" step="0.01" placeholder="Rate" value={l.rate} onChange={(e) => setBLines(bLines.map((x, xi) => xi === i ? { ...x, rate: e.target.value } : x))} />
+                  <Input className="col-span-1 sm:col-span-1 h-8 text-right font-mono" type="number" placeholder="GST%" value={l.tax_rate} onChange={(e) => setBLines(bLines.map((x, xi) => xi === i ? { ...x, tax_rate: e.target.value } : x))} />
+                  <button type="button" aria-label="Remove line" className="col-span-2 sm:col-span-1 p-1 text-slate-400 hover:text-red-600 min-h-8" onClick={() => bLines.length > 1 && setBLines(bLines.filter((_, xi) => xi !== i))}><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               ))}
               <div className="p-2"><Button type="button" data-testid="bill-add-line-btn" variant="outline" size="sm" onClick={() => setBLines([...bLines, emptyBillLine()])}><Plus className="w-3.5 h-3.5 mr-1" /> Line</Button></div>

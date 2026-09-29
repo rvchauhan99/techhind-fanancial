@@ -211,7 +211,7 @@ export default function Tickets() {
         clearFilters={clearFilters} activeCount={activeCount} testId="tickets-filters" />
 
       <div className="bg-white border border-slate-200 rounded-lg" data-testid="tickets-table">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm pwa-table">
           <thead>
             <tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
               <th className="text-left px-2 py-1.5">Number</th>
@@ -307,7 +307,7 @@ export default function Tickets() {
                 required
               />
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <div>
                 <Label className="text-xs">Priority</Label>
                 <Select

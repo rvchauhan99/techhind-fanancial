@@ -28,7 +28,7 @@ function AgingTable({ tid, data, type }) {
           ))}
         </div>
       </div>
-      <table className="w-full text-sm">
+      <table className="w-full text-sm pwa-table">
         <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
           <th className="text-left px-3 py-2">{type === "ar" ? "Invoice" : "Bill"}</th>
           <th className="text-left px-3 py-2">{type === "ar" ? "Customer" : "Vendor"}</th>

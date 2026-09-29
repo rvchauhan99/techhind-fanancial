@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import api, { apiError } from "../lib/api"
 import { fmtDateTime } from "../lib/format"
 import { useAuth } from "../context/AuthContext"
@@ -14,6 +15,38 @@ const SYSTEM_ACTIONS = new Set([
   "reminder_set", "reminder_cleared", "project_created", "project_updated",
 ])
 
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+const CommentBody = ({ text, mentions }) => {
+  const names = (mentions || []).map((m) => m.name).filter(Boolean).sort((a, b) => b.length - a.length)
+  if (!text || !names.length) return text || ""
+  const pattern = new RegExp(`@(${names.map(escapeRegExp).join("|")})`, "gi")
+  const parts = []
+  let last = 0
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? 0
+    if (index > last) parts.push(text.slice(last, index))
+    parts.push(
+      <span key={`${index}-${match[1]}`} className="font-semibold text-[#0F284E]">
+        @{match[1]}
+      </span>
+    )
+    last = index + match[0].length
+  }
+  if (last < text.length) parts.push(text.slice(last))
+  return parts
+}
+
+const mentionTrigger = (value, caret) => {
+  const upto = value.slice(0, caret)
+  const at = upto.lastIndexOf("@")
+  if (at < 0) return null
+  if (at > 0 && /[A-Za-z0-9]/.test(upto[at - 1])) return null
+  const frag = upto.slice(at + 1)
+  if (frag.includes("\n")) return null
+  return { at, frag }
+}
+
 /**
  * Chat-style activity feed for project/task with polling.
  */
@@ -21,6 +54,16 @@ export default function WorkActivity({ entityType, entityId, canComment, pollMs 
   const { canCap } = useAuth()
   const [rows, setRows] = useState(null)
   const [body, setBody] = useState("")
+  const [users, setUsers] = useState([])
+  const [usersReady, setUsersReady] = useState(false)
+  const [mentionOpen, setMentionOpen] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState("")
+  const [mentionAt, setMentionAt] = useState(0)
+  const [mentionIds, setMentionIds] = useState([])
+  const [highlight, setHighlight] = useState(0)
+  const [menuPos, setMenuPos] = useState(null)
+  const inputRef = useRef(null)
+  const listRef = useRef(null)
   const write = canComment ?? canCap("can_work_write")
 
   const load = () => {
@@ -35,12 +78,157 @@ export default function WorkActivity({ entityType, entityId, canComment, pollMs 
   }
 
   useEffect(() => {
-    load()
+    api.get("/users", { params: { active_only: true } })
+      .then((r) => setUsers(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setUsers([]))
+      .finally(() => setUsersReady(true))
+  }, [])
+
+  useEffect(() => {
+    if (!entityType || !entityId) {
+      setRows([])
+      return undefined
+    }
+    api.post("/notifications/seen", { entity_type: entityType, entity_id: entityId })
+      .catch(() => {})
+      .finally(load)
     if (!pollMs) return undefined
     const t = setInterval(load, pollMs)
     return () => clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entityType, entityId, pollMs])
+
+  const mentionMatches = users.filter((user) => {
+    const name = (user.name || "").toLowerCase()
+    const email = (user.email || "").toLowerCase()
+    const query = mentionQuery.trim().toLowerCase()
+    if (!name && !email) return false
+    if (!query) return true
+    return name.includes(query) || email.includes(query)
+  }).slice(0, 8)
+
+  useEffect(() => {
+    setHighlight(0)
+  }, [mentionQuery, mentionOpen])
+
+  const updateMenuPos = () => {
+    const el = inputRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    setMenuPos({
+      left: Math.max(8, rect.left),
+      width: Math.max(rect.width, 220),
+      bottom: Math.max(8, window.innerHeight - rect.top + 4),
+    })
+  }
+
+  useLayoutEffect(() => {
+    if (!mentionOpen) {
+      setMenuPos(null)
+      return undefined
+    }
+    updateMenuPos()
+    const onMove = () => updateMenuPos()
+    window.addEventListener("resize", onMove)
+    window.addEventListener("scroll", onMove, true)
+    return () => {
+      window.removeEventListener("resize", onMove)
+      window.removeEventListener("scroll", onMove, true)
+    }
+  }, [mentionOpen, body])
+
+  useEffect(() => {
+    if (!mentionOpen) return undefined
+    const onDown = (e) => {
+      if (listRef.current?.contains(e.target) || inputRef.current?.contains(e.target)) return
+      setMentionOpen(false)
+    }
+    document.addEventListener("mousedown", onDown)
+    return () => document.removeEventListener("mousedown", onDown)
+  }, [mentionOpen])
+
+  const syncMention = (value, caret) => {
+    const hit = mentionTrigger(value, caret)
+    if (!hit) {
+      setMentionOpen(false)
+      return
+    }
+    setMentionAt(hit.at)
+    setMentionQuery(hit.frag)
+    setMentionOpen(true)
+  }
+
+  const handlePick = (user) => {
+    if (!user) return
+    const name = user.name || user.email || ""
+    const before = body.slice(0, mentionAt)
+    const after = body.slice(mentionAt + 1 + mentionQuery.length)
+    const next = `${before}@${name} ${after.replace(/^\s+/, "")}`
+    setBody(next)
+    if (user.id) {
+      setMentionIds((ids) => (ids.includes(user.id) ? ids : [...ids, user.id]))
+    }
+    setMentionOpen(false)
+    setMentionQuery("")
+    const pos = before.length + name.length + 2
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.setSelectionRange(pos, pos)
+    })
+  }
+
+  const handleAt = () => {
+    const el = inputRef.current
+    const caret = el?.selectionStart ?? body.length
+    const prefix = body.slice(0, caret)
+    const needSpace = prefix.length > 0 && !/\s$/.test(prefix)
+    const insert = `${needSpace ? " " : ""}@`
+    const next = `${prefix}${insert}${body.slice(caret)}`
+    const at = prefix.length + (needSpace ? 1 : 0)
+    setBody(next)
+    setMentionAt(at)
+    setMentionQuery("")
+    setMentionOpen(true)
+    const pos = at + 1
+    requestAnimationFrame(() => {
+      el?.focus()
+      el?.setSelectionRange(pos, pos)
+    })
+  }
+
+  const handleKeyDown = (e) => {
+    if (!mentionOpen) return
+    if (e.key === "Escape") {
+      e.preventDefault()
+      setMentionOpen(false)
+      return
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault()
+      setHighlight((i) => Math.min(i + 1, Math.max(mentionMatches.length - 1, 0)))
+      return
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault()
+      setHighlight((i) => Math.max(i - 1, 0))
+      return
+    }
+    if (e.key === "Enter" || e.key === "Tab") {
+      if (mentionMatches[highlight]) {
+        e.preventDefault()
+        handlePick(mentionMatches[highlight])
+      } else {
+        e.preventDefault()
+      }
+    }
+  }
+
+  const idsStillInBody = (text) => mentionIds.filter((id) => {
+    const user = users.find((u) => u.id === id)
+    const token = (user?.name || user?.email || "").toLowerCase()
+    if (!token) return false
+    return text.toLowerCase().includes(`@${token}`)
+  })
 
   const handleComment = async (e) => {
     e.preventDefault()
@@ -49,14 +237,58 @@ export default function WorkActivity({ entityType, entityId, canComment, pollMs 
       const path = entityType === "project"
         ? `/work/projects/${entityId}/comments`
         : `/work/tasks/${entityId}/comments`
-      await api.post(path, { body: body.trim() })
+      const text = body.trim()
+      await api.post(path, { body: text, mention_ids: idsStillInBody(text) })
       setBody("")
+      setMentionIds([])
+      setMentionOpen(false)
       toast.success("Comment posted")
       load()
     } catch (err) {
       toast.error(apiError(err))
     }
   }
+
+  const mentionMenu = mentionOpen && menuPos && typeof document !== "undefined"
+    ? createPortal(
+      <div
+        ref={listRef}
+        data-testid="work-mention-list"
+        role="listbox"
+        aria-label="Mention a colleague"
+        className="fixed max-h-40 overflow-y-auto bg-white border border-slate-200 rounded-md shadow-md z-50"
+        style={{ left: menuPos.left, width: menuPos.width, bottom: menuPos.bottom }}
+      >
+        {!usersReady && (
+          <div className="px-2.5 py-1.5 text-[11px] text-slate-400">Loading people…</div>
+        )}
+        {usersReady && mentionMatches.length === 0 && (
+          <div className="px-2.5 py-1.5 text-[11px] text-slate-400">No users match</div>
+        )}
+        {mentionMatches.map((user, idx) => (
+          <button
+            key={user.id}
+            type="button"
+            role="option"
+            aria-selected={idx === highlight}
+            data-testid="work-mention-option"
+            className={`w-full text-left px-2.5 py-1.5 text-xs ${idx === highlight ? "bg-slate-100" : "hover:bg-slate-50"}`}
+            onMouseEnter={() => setHighlight(idx)}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => {
+              e.stopPropagation()
+              handlePick(user)
+            }}
+          >
+            <span className="font-medium text-slate-800">{user.name}</span>
+            {user.email ? <span className="ml-2 text-[10px] text-slate-400">{user.email}</span> : null}
+            <span className="ml-2 text-[10px] uppercase text-slate-400">{user.role}</span>
+          </button>
+        ))}
+      </div>,
+      document.body,
+    )
+    : null
 
   return (
     <div className="bg-white border border-slate-200 rounded-lg flex flex-col h-full min-h-[320px]" data-testid="work-activity-panel">
@@ -77,6 +309,8 @@ export default function WorkActivity({ entityType, entityId, canComment, pollMs 
               </div>
             )
           }
+          const mentioned = (r.mentions || []).map((m) => m.name).filter(Boolean)
+          const seen = (r.seen_by || []).map((m) => m.name).filter(Boolean)
           return (
             <div key={r.id} className="flex flex-col gap-0.5" data-testid={`activity-msg-${r.id}`}>
               <div className="flex items-baseline gap-2">
@@ -84,8 +318,16 @@ export default function WorkActivity({ entityType, entityId, canComment, pollMs 
                 <span className="font-mono text-[10px] text-slate-400">{fmtDateTime(r.ts)}</span>
               </div>
               <div className="text-sm text-slate-700 bg-slate-50 border border-slate-100 rounded-md px-2.5 py-1.5 whitespace-pre-wrap">
-                {r.comment || r.summary}
+                <CommentBody text={r.comment || r.summary} mentions={r.mentions} />
               </div>
+              {isComment && mentioned.length > 0 && (
+                <div className="text-[10px] text-slate-500 px-0.5" data-testid={`mention-to-${r.id}`}>
+                  To {mentioned.join(", ")}
+                  {seen.length > 0 && (
+                    <span data-testid={`mention-seen-${r.id}`}> · Seen by {seen.join(", ")}</span>
+                  )}
+                </div>
+              )}
             </div>
           )
         })}
@@ -93,16 +335,33 @@ export default function WorkActivity({ entityType, entityId, canComment, pollMs 
       </div>
       {write && (
         <form onSubmit={handleComment} className="px-3 py-2 border-t border-slate-100 flex gap-2 shrink-0">
+          <button
+            type="button"
+            data-testid="work-mention-button"
+            aria-label="Mention a user"
+            onClick={handleAt}
+            className="h-8 w-8 shrink-0 rounded-md border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            @
+          </button>
           <Input
+            ref={inputRef}
             data-testid="work-comment-input"
             className="h-8 text-xs"
             placeholder="Write a comment… use @Name to mention"
             value={body}
-            onChange={(e) => setBody(e.target.value)}
+            aria-autocomplete="list"
+            aria-expanded={mentionOpen}
+            onKeyDown={handleKeyDown}
+            onChange={(e) => {
+              setBody(e.target.value)
+              syncMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
+            }}
           />
           <Button data-testid="work-comment-submit" type="submit" size="sm" className="h-8 bg-[#0F284E] hover:bg-[#17386D] text-white shrink-0">
             Send
           </Button>
+          {mentionMenu}
         </form>
       )}
     </div>

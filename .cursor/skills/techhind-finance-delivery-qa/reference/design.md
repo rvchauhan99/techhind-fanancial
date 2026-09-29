@@ -4,8 +4,12 @@ Source of truth (full tokens): `docs/design-guidelines.json`.
 
 ## Layout
 
-- Desktop-first left-nav workspace; maximize data density; minimize padding
-- Persistent renewals strip: Overdue / 7 / 15 / 30 day buckets
+- Desktop (`md` and up): left-nav workspace; maximize data density; minimize padding
+- Phone (below `md`, 768px): installable PWA. Menu button + bottom tabs (Home, Tickets, Invoices, Tasks, More). Full menu in a solid `#0B192C` drawer. Safe-area insets. Header actions sit in `mobile-action-bar` above the tabs
+- Lists use `table.pwa-table`: desktop table, phone cards labeled from the header (`data-label`). The roles permission matrix stays a horizontal-scroll table
+- FilterBar: on a phone, search stays inline and other fields open in a Filters sheet (`filter-more-btn`). URL query params stay the source of truth
+- Service worker (production build only) precaches the app shell. `/api` is network-only. Offline banner `offline-banner`; update prompt `pwa-update-banner`
+- Persistent renewals strip: Overdue / 7 / 15 / 30 day buckets (horizontal scroll on a phone)
 - Operational queue counters where implemented
 - Solid backgrounds on dialogs/drawers — no transparent floating sheets
 
@@ -31,6 +35,12 @@ Draft, Pending Approval, Approved/Locked, Partially Paid, Paid, Overdue, Cancell
 All primary buttons, tabs, inputs, filters, KPIs must have kebab-case `data-testid` (see `frontend/src/constants/testIds/`).
 
 Header notification bell: `notification-bell`, `notification-badge`, `notification-item`, `notification-mark-all`.
+
+Task/project chat mentions: `work-activity-panel`, `work-comment-input`, `work-mention-button`, `work-mention-list`, `work-mention-option`, `work-comment-submit`.
+
+Phone shell: `mobile-menu-btn`, `mobile-tabbar`, `tab-home`, `tab-tickets`, `tab-invoices`, `tab-tasks`, `tab-more`, `mobile-drawer`, `mobile-nav`, `mobile-action-bar`, `filter-more-btn`, `offline-banner`, `pwa-update-banner`, `pwa-update-reload`.
+
+File dropzone (tasks Files card + ticket reply): `task-file-dropzone`, `task-file-input`, `ticket-reply-dropzone`, `ticket-reply-files`, `file-chip-list`, `file-chip-remove-{n}`. Native click/drop/paste; png/jpeg/webp/pdf/csv/xls/xlsx; 5 MB each. Tasks cap 10 (immediate upload). Tickets cap 5 per message (queued chips, then send). File-only ticket reply stores body `(attachment)`.
 
 ## List filters (FilterBar)
 

@@ -4,8 +4,10 @@ import { ArrowLeft, Paperclip, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import api, { apiError, API } from "../lib/api"
 import { fmtDate, fmtDateTime } from "../lib/format"
+import { MAX_TASK_ATTACHMENTS } from "../lib/uploadLimits"
 import Layout, { StatusBadge } from "../components/Layout"
 import WorkActivity from "../components/WorkActivity"
+import FileDropzone from "../components/FileDropzone"
 import { useAuth } from "../context/AuthContext"
 import { Label } from "../components/ui/label"
 import { Input } from "../components/ui/input"
@@ -27,6 +29,7 @@ export default function TaskDetail() {
   const [checkText, setCheckText] = useState("")
   const [descEdit, setDescEdit] = useState("")
   const [reminderLocal, setReminderLocal] = useState("")
+  const [uploading, setUploading] = useState(false)
 
   const load = () => {
     api.get(`/work/tasks/${id}`).then((r) => {
@@ -118,21 +121,29 @@ export default function TaskDetail() {
     await saveChecklist((task.checklist || []).filter((c) => c.id !== itemId))
   }
 
-  const uploadFile = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const fd = new FormData()
-    fd.append("file", file)
+  const handleUploadFiles = async (incoming) => {
+    if (!incoming?.length) return
+    setUploading(true)
+    let ok = 0
     try {
-      const { data } = await api.post(`/work/tasks/${id}/attachments`, fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      })
-      setTask(data)
-      toast.success("File attached")
-    } catch (err) {
-      toast.error(apiError(err))
+      for (const file of incoming) {
+        const fd = new FormData()
+        fd.append("file", file)
+        try {
+          const { data } = await api.post(`/work/tasks/${id}/attachments`, fd, {
+            headers: { "Content-Type": "multipart/form-data" },
+          })
+          setTask(data)
+          ok += 1
+        } catch (err) {
+          toast.error(apiError(err))
+          break
+        }
+      }
+      if (ok) toast.success(ok === 1 ? "File attached" : `${ok} files attached`)
+    } finally {
+      setUploading(false)
     }
-    e.target.value = ""
   }
 
   const removeFile = async (fid) => {
@@ -355,6 +366,9 @@ export default function TaskDetail() {
           <div className="bg-white border border-slate-200 rounded-lg p-3" data-testid="task-attachments">
             <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold mb-2 flex items-center gap-1">
               <Paperclip className="w-3.5 h-3.5" /> Files
+              <span className="normal-case tracking-normal font-medium text-slate-400">
+                {(task.attachments || []).length} / {MAX_TASK_ATTACHMENTS}
+              </span>
             </div>
             <ul className="space-y-1">
               {(task.attachments || []).map((f) => (
@@ -368,7 +382,7 @@ export default function TaskDetail() {
                     {f.original_filename || f.id}
                   </a>
                   {write && (
-                    <button type="button" onClick={() => removeFile(f.id)} className="text-slate-400 hover:text-red-600">
+                    <button type="button" onClick={() => removeFile(f.id)} className="text-slate-400 hover:text-red-600" aria-label={`Remove ${f.original_filename || "file"}`}>
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   )}
@@ -377,7 +391,17 @@ export default function TaskDetail() {
               {!(task.attachments || []).length && <li className="text-xs text-slate-400">No files</li>}
             </ul>
             {write && (
-              <Input type="file" className="mt-2 h-8 text-xs" data-testid="task-file-input" onChange={uploadFile} />
+              <div className="mt-2">
+                <FileDropzone
+                  dropzoneTestId="task-file-dropzone"
+                  inputTestId="task-file-input"
+                  multiple
+                  maxFiles={MAX_TASK_ATTACHMENTS}
+                  already={(task.attachments || []).length}
+                  busy={uploading}
+                  onFiles={handleUploadFiles}
+                />
+              </div>
             )}
           </div>
         </div>

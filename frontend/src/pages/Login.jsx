@@ -90,9 +90,9 @@ export default function Login() {
         </div>
         <div className="text-xs text-slate-600">FY Apr–Mar · INR · GSTIN 24AAACT2728Q1ZW</div>
       </div>
-      <div className="flex-1 flex items-center justify-center p-8">
+      <div className="flex-1 flex items-center justify-center p-4 md:p-8 pt-[max(1rem,env(safe-area-inset-top))]">
         {needsPasswordChange ? (
-          <div className="w-full max-w-sm bg-white border border-slate-200 rounded-xl p-8 shadow-sm">
+          <div className="w-full max-w-sm bg-white border border-slate-200 rounded-xl p-5 md:p-8 shadow-sm">
             <ChangePasswordForm
               onSubmit={handleChangePassword}
               title="Change temporary password"
@@ -101,7 +101,7 @@ export default function Login() {
             />
           </div>
         ) : (
-          <form onSubmit={submit} className="w-full max-w-sm space-y-5 bg-white border border-slate-200 rounded-xl p-8 shadow-sm" data-testid="login-form">
+          <form onSubmit={submit} className="w-full max-w-sm space-y-5 bg-white border border-slate-200 rounded-xl p-5 md:p-8 shadow-sm" data-testid="login-form">
             <div>
               <h2 className="font-heading text-2xl font-bold tracking-tight text-slate-900">Sign in</h2>
               <p className="text-sm text-slate-500 mt-1">Use your TechHind Finance credentials</p>

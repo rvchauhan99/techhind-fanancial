@@ -75,6 +75,11 @@ async def ensure_indexes() -> None:
     await db.notifications.create_index([("user_id", 1), ("read", 1), ("ts", -1)])
     await db.notifications.create_index("ticket_id")
     await db.notifications.create_index([("entity_type", 1), ("entity_id", 1)])
+    await db.notifications.create_index("activity_id")
+    await db.notifications.create_index(
+        [("type", 1), ("read", 1), ("repeat_until_read", 1), ("ts", 1)],
+        name="mention_nudge",
+    )
     await db.org_roles.create_index("key", unique=True)
     await db.menus.create_index("key", unique=True)
     await db.role_menus.create_index(

@@ -178,14 +178,14 @@ export default function Tasks() {
       title="My Work"
       actions={
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          <div className="flex border border-slate-200 rounded-md overflow-hidden" data-testid="tasks-view-switcher">
+          <div className="flex border border-slate-200 rounded-md overflow-x-auto shrink-0" data-testid="tasks-view-switcher">
             {viewBtns.map((v) => (
               <button
                 key={v.key}
                 type="button"
                 data-testid={`view-${v.key}`}
                 onClick={() => setView(v.key)}
-                className={`h-8 px-2.5 text-xs font-semibold flex items-center gap-1 ${
+                className={`h-8 shrink-0 px-2.5 text-xs font-semibold flex items-center gap-1 ${
                   view === v.key ? "bg-[#0F284E] text-white" : "bg-white text-slate-600 hover:bg-slate-50"
                 }`}
               >
@@ -213,7 +213,7 @@ export default function Tasks() {
         clearFilters={clearFilters} activeCount={activeCount} testId="tasks-filters" />
       {view === "list" && (
         <div className="bg-white border border-slate-200 rounded-lg" data-testid="tasks-table">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm pwa-table">
             <thead>
               <tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
                 <th className="text-left px-3 py-2">Number</th>
@@ -252,9 +252,9 @@ export default function Tasks() {
       )}
 
       {view === "kanban" && (
-        <div className="flex gap-2 overflow-x-auto pb-2" data-testid="tasks-kanban">
+        <div className="flex gap-2 overflow-x-auto pb-2 snap-x snap-mandatory" data-testid="tasks-kanban">
           {(board?.columns || KANBAN.map((s) => ({ status: s, tasks: [] }))).map((col) => (
-            <div key={col.status} className="w-56 shrink-0 bg-slate-50 border border-slate-200 rounded-lg" data-testid={`kanban-${col.status}`}>
+            <div key={col.status} className="w-56 shrink-0 snap-start bg-slate-50 border border-slate-200 rounded-lg" data-testid={`kanban-${col.status}`}>
               <div className="px-2.5 py-2 border-b border-slate-200 flex items-center justify-between">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">{col.status}</span>
                 <span className="font-mono text-xs text-slate-500">{(col.tasks || []).length}</span>
@@ -300,7 +300,7 @@ export default function Tasks() {
                 <span className="capitalize">{b.key.replace("_", " ")}</span>
                 <span className="font-mono text-xs text-slate-500">{(b.tasks || []).length}</span>
               </div>
-              <table className="w-full text-sm">
+              <table className="w-full text-sm pwa-table">
                 <tbody>
                   {(b.tasks || []).map((t) => (
                     <tr key={t.id} className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
@@ -352,7 +352,7 @@ export default function Tasks() {
             <div><Label>Description</Label>
               <Input data-testid="task-desc-input" value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div><Label>Type</Label>
                 <Select value={form.task_type} onValueChange={(v) => setForm({ ...form, task_type: v })}>
                   <SelectTrigger className="h-9" data-testid="task-type"><SelectValue /></SelectTrigger>
@@ -395,7 +395,7 @@ export default function Tasks() {
                 ))}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div><Label>Due date</Label>
                 <Input type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} /></div>
               <div><Label>Reminder</Label>

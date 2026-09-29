@@ -125,8 +125,8 @@ export default function InvoiceForm() {
   return (
     <Layout title={id ? `Edit Draft ${docType !== "INV" ? docType : "Invoice"}` : "New Invoice"}>
       <form onSubmit={submit} className="space-y-4" data-testid="invoice-form">
-        <div className="bg-white border border-slate-200 rounded-lg p-5 grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="col-span-2"><Label>Customer *</Label>
+        <div className="bg-white border border-slate-200 rounded-lg p-3 md:p-5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="sm:col-span-2"><Label>Customer *</Label>
             <Select value={form.customer_id} onValueChange={(v) => setForm({ ...form, customer_id: v })}>
               <SelectTrigger data-testid="invoice-customer-select"><SelectValue placeholder="Select customer" /></SelectTrigger>
               <SelectContent className="bg-white max-h-64">{customers.map((c) => (
@@ -136,7 +136,7 @@ export default function InvoiceForm() {
             <Input data-testid="invoice-date-input" type="date" required value={form.invoice_date} onChange={(e) => setForm({ ...form, invoice_date: e.target.value })} /></div>
           <div><Label>Due date</Label>
             <Input data-testid="invoice-due-input" type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} /></div>
-          <div className="col-span-2"><Label>Place of supply override</Label>
+          <div className="sm:col-span-2"><Label>Place of supply override</Label>
             <Select value={form.pos_state_code || "auto"} onValueChange={(v) => {
               if (v === "auto") setForm({ ...form, pos_state_code: "", pos_state: "" });
               else { const s = INDIAN_STATES.find(([c]) => c === v); setForm({ ...form, pos_state_code: v, pos_state: s ? s[1] : "" }); }
@@ -148,9 +148,9 @@ export default function InvoiceForm() {
               </SelectContent>
             </Select></div>
           {form.pos_state_code && customer && form.pos_state_code !== customer.state_code && (
-            <div className="col-span-2"><Label>Override reason *</Label>
+            <div className="sm:col-span-2"><Label>Override reason *</Label>
               <Input data-testid="invoice-pos-reason-input" value={form.pos_override_reason} onChange={(e) => setForm({ ...form, pos_override_reason: e.target.value })} /></div>)}
-          <div className="col-span-4 flex flex-wrap gap-6 pt-1">
+          <div className="col-span-full flex flex-wrap gap-4 md:gap-6 pt-1">
             <label className="flex items-center gap-2 text-sm">
               <Switch data-testid="invoice-export-switch" checked={form.is_export_sez} onCheckedChange={(v) => setForm({ ...form, is_export_sez: v })} />
               Export / SEZ supply</label>
@@ -167,7 +167,7 @@ export default function InvoiceForm() {
         </div>
 
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden" data-testid="invoice-lines-editor">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm pwa-table">
             <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
               <th className="text-left px-2 py-2 w-56">Product (autofill)</th><th className="text-left px-2 py-2">Description *</th>
               <th className="text-left px-2 py-2 w-24">HSN/SAC</th><th className="text-right px-2 py-2 w-16">Qty</th>
@@ -197,7 +197,7 @@ export default function InvoiceForm() {
                   <td className="px-1.5 py-1 text-right font-mono text-xs">{fmtINR(Number(l.qty || 0) * Number(l.rate || 0) - Number(l.discount || 0))}</td>
                   <td className="px-1.5 py-1 text-center">
                     {lines.length > 1 && (
-                      <button type="button" data-testid={`line-remove-${i}`} onClick={() => setLines(lines.filter((_, x) => x !== i))}
+                      <button type="button" aria-label="Remove line" data-testid={`line-remove-${i}`} onClick={() => setLines(lines.filter((_, x) => x !== i))}
                         className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>)}
                   </td>
                 </tr>
@@ -210,7 +210,7 @@ export default function InvoiceForm() {
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-lg p-5 flex flex-wrap items-center justify-between gap-4" data-testid="invoice-totals-preview">
+        <div className="bg-white border border-slate-200 rounded-lg p-3 md:p-5 flex flex-wrap items-center justify-between gap-3 md:gap-4 max-md:sticky max-md:bottom-0 max-md:z-20" data-testid="invoice-totals-preview">
           <div className="flex gap-8 text-sm">
             <div><div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Taxable</div>
               <div className="font-mono font-semibold" data-testid="preview-taxable">{fmtINR(totals.taxable)}</div></div>

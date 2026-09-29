@@ -35,6 +35,7 @@ PRIORITIES = ("low", "normal", "high")
 CATEGORIES = ("billing", "technical", "onboarding", "account", "other")
 VISIBILITIES = ("public", "internal")
 MAX_ATTACHMENTS = int(os.environ.get("SUPPORT_TICKETS_MAX_ATTACHMENTS_PER_MESSAGE") or 5)
+ATTACHMENT_PLACEHOLDER_BODY = "(attachment)"
 
 SLA_FIRST_RESPONSE_HOURS = {"high": 4, "normal": 8, "low": 24}
 SLA_RESOLVE_HOURS = {"high": 24, "normal": 48, "low": 120}
@@ -613,12 +614,16 @@ async def post_message(
     form = await request.form()
     body = str(form.get("body") or "")
     visibility = str(form.get("visibility") or "public")
+    files = form.getlist("files")
+    if not body.strip() and any(
+        f and not isinstance(f, (str, bytes)) and getattr(f, "filename", None) for f in files
+    ):
+        body = ATTACHMENT_PLACEHOLDER_BODY
     if not body.strip():
         raise HTTPException(status_code=400, detail="Message body required")
     vis = visibility.strip().lower()
     if vis not in VISIBILITIES:
         raise HTTPException(status_code=400, detail="Invalid visibility")
-    files = form.getlist("files")
     attachments = await _save_attachments(files, tid)
     now = iso_now()
     msg = {

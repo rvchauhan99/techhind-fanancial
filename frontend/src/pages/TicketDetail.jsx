@@ -4,13 +4,12 @@ import { ArrowLeft, Paperclip } from "lucide-react"
 import { toast } from "sonner"
 import api, { apiError } from "../lib/api"
 import { fmtDateTime } from "../lib/format"
+import { MAX_TICKET_ATTACHMENTS, filterUploadFiles } from "../lib/uploadLimits"
 import Layout, { StatusBadge } from "../components/Layout"
+import FileDropzone, { FileChipList } from "../components/FileDropzone"
 import { useAuth } from "../context/AuthContext"
 import { Button } from "../components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select"
-
-const MAX_FILES = 5
-const MAX_BYTES = 5 * 1024 * 1024
 
 function SlaHeader({ ticket }) {
   if (!ticket?.sla_due_at) return null
@@ -69,18 +68,26 @@ export default function TicketDetail() {
     }
   }
 
+  const handleQueueFiles = (incoming) => {
+    if (!incoming?.length) return
+    setFiles((prev) => [...prev, ...incoming].slice(0, MAX_TICKET_ATTACHMENTS))
+  }
+
+  const handleRemoveQueued = (index) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index))
+  }
+
   const handleReply = async (e) => {
     e.preventDefault()
-    if (!body.trim()) return
-    if (files.length > MAX_FILES) {
-      toast.error(`Max ${MAX_FILES} files`)
+    if (!body.trim() && !files.length) return
+    if (files.length > MAX_TICKET_ATTACHMENTS) {
+      toast.error(`Max ${MAX_TICKET_ATTACHMENTS} files`)
       return
     }
-    for (const f of files) {
-      if (f.size > MAX_BYTES) {
-        toast.error(`${f.name} exceeds 5 MB`)
-        return
-      }
+    const { rejected } = filterUploadFiles(files, { maxFiles: MAX_TICKET_ATTACHMENTS, already: 0 })
+    if (rejected.length) {
+      toast.error(rejected[0].reason)
+      return
     }
     setBusy(true)
     try {
@@ -266,61 +273,63 @@ export default function TicketDetail() {
       {canWrite && (
         <form
           onSubmit={handleReply}
-          className="bg-white border border-slate-200 rounded-lg p-3 space-y-2"
+          className="bg-white border border-slate-200 rounded-lg p-3 space-y-2 max-md:sticky max-md:bottom-0 max-md:z-20"
           data-testid="ticket-reply-form"
         >
-          <div className="flex gap-1" data-testid="reply-visibility-toggle">
-            <button
-              type="button"
-              className={`h-7 px-2.5 rounded text-[11px] font-semibold border ${
-                visibility === "public"
-                  ? "bg-[#0F284E] text-white border-[#0F284E]"
-                  : "bg-white text-slate-600 border-slate-200"
+          <FileDropzone
+            dropzoneTestId="ticket-reply-dropzone"
+            inputTestId="ticket-reply-files"
+            multiple
+            maxFiles={MAX_TICKET_ATTACHMENTS}
+            already={files.length}
+            disabled={busy}
+            busy={busy}
+            hint={`Drop, paste, or click (max ${MAX_TICKET_ATTACHMENTS} × 5MB)`}
+            onFiles={handleQueueFiles}
+            className="space-y-2"
+          >
+            <div className="flex gap-1" data-testid="reply-visibility-toggle">
+              <button
+                type="button"
+                className={`h-7 px-2.5 rounded text-[11px] font-semibold border ${
+                  visibility === "public"
+                    ? "bg-[#0F284E] text-white border-[#0F284E]"
+                    : "bg-white text-slate-600 border-slate-200"
+                }`}
+                onClick={() => setVisibility("public")}
+                data-testid="visibility-public"
+              >
+                Public reply
+              </button>
+              <button
+                type="button"
+                className={`h-7 px-2.5 rounded text-[11px] font-semibold border ${
+                  visibility === "internal"
+                    ? "bg-amber-600 text-white border-amber-600"
+                    : "bg-white text-slate-600 border-slate-200"
+                }`}
+                onClick={() => setVisibility("internal")}
+                data-testid="visibility-internal"
+              >
+                Internal note
+              </button>
+            </div>
+            <textarea
+              className={`w-full border rounded-md px-2 py-1.5 text-sm min-h-[72px] ${
+                visibility === "internal" ? "bg-amber-50/50 border-amber-200" : ""
               }`}
-              onClick={() => setVisibility("public")}
-              data-testid="visibility-public"
-            >
-              Public reply
-            </button>
-            <button
-              type="button"
-              className={`h-7 px-2.5 rounded text-[11px] font-semibold border ${
-                visibility === "internal"
-                  ? "bg-amber-600 text-white border-amber-600"
-                  : "bg-white text-slate-600 border-slate-200"
-              }`}
-              onClick={() => setVisibility("internal")}
-              data-testid="visibility-internal"
-            >
-              Internal note
-            </button>
-          </div>
-          <textarea
-            className={`w-full border rounded-md px-2 py-1.5 text-sm min-h-[72px] ${
-              visibility === "internal" ? "bg-amber-50/50 border-amber-200" : ""
-            }`}
-            placeholder={visibility === "internal" ? "Internal note (Finance only)…" : "Write a support reply…"}
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            data-testid="ticket-reply-body"
-          />
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <label className="text-xs text-slate-500 flex items-center gap-1.5 cursor-pointer">
-              <Paperclip className="w-3.5 h-3.5" />
-              <span>Attach (max 5 × 5MB)</span>
-              <input
-                type="file"
-                multiple
-                className="hidden"
-                data-testid="ticket-reply-files"
-                onChange={(e) => setFiles(Array.from(e.target.files || []).slice(0, MAX_FILES))}
-              />
-              {files.length > 0 && <span className="text-slate-700">{files.length} file(s)</span>}
-            </label>
+              placeholder={visibility === "internal" ? "Internal note (Finance only)…" : "Write a support reply…"}
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              data-testid="ticket-reply-body"
+            />
+            <FileChipList files={files} onRemove={handleRemoveQueued} disabled={busy} />
+          </FileDropzone>
+          <div className="flex justify-end">
             <Button
               type="submit"
               size="sm"
-              disabled={busy || !body.trim()}
+              disabled={busy || (!body.trim() && !files.length)}
               className={visibility === "internal" ? "bg-amber-600 text-white" : "bg-[#0F284E] text-white"}
               data-testid="ticket-reply-submit"
             >

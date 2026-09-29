@@ -55,7 +55,7 @@ export default function CustomerDetail() {
           <span>Projects</span>
           <Link to="/projects" className="text-xs font-medium text-[#0066CC]">View all</Link>
         </div>
-        <table className="w-full text-sm">
+        <table className="w-full text-sm pwa-table">
           <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
             <th className="text-left px-3 py-2">Number</th><th className="text-left px-3 py-2">Name</th>
             <th className="text-left px-3 py-2">Status</th><th className="text-left px-3 py-2">Owner</th></tr></thead>
@@ -78,7 +78,7 @@ export default function CustomerDetail() {
           <span>Support tickets</span>
           <Link to="/tickets" className="text-xs font-medium text-[#0066CC]">View all</Link>
         </div>
-        <table className="w-full text-sm">
+        <table className="w-full text-sm pwa-table">
           <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
             <th className="text-left px-3 py-2">Number</th><th className="text-left px-3 py-2">Subject</th>
             <th className="text-left px-3 py-2">Status</th><th className="text-left px-3 py-2">Updated</th></tr></thead>
@@ -98,7 +98,7 @@ export default function CustomerDetail() {
 
       <div className="bg-white border border-slate-200 rounded-lg" data-testid="customer-subscriptions">
         <div className="px-4 py-2.5 border-b border-slate-200 text-sm font-semibold text-slate-800">Subscriptions</div>
-        <table className="w-full text-sm">
+        <table className="w-full text-sm pwa-table">
           <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
             <th className="text-left px-3 py-2">Plan</th><th className="text-left px-3 py-2">Status</th>
             <th className="text-left px-3 py-2">Cycle</th><th className="text-right px-3 py-2">Price</th>
@@ -122,7 +122,7 @@ export default function CustomerDetail() {
       <div className="bg-white border border-slate-200 rounded-lg" data-testid="customer-invoices">
         <div className="px-4 py-2.5 border-b border-slate-200 text-sm font-semibold text-slate-800">
           Invoices &amp; Notes {data.draft_count > 0 && <span className="text-xs font-normal text-slate-500">({data.draft_count} drafts not shown)</span>}</div>
-        <table className="w-full text-sm">
+        <table className="w-full text-sm pwa-table">
           <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
             <th className="text-left px-3 py-2">Number</th><th className="text-left px-3 py-2">Type</th>
             <th className="text-left px-3 py-2">Date</th><th className="text-right px-3 py-2">Total</th>
@@ -145,7 +145,7 @@ export default function CustomerDetail() {
 
       <div className="bg-white border border-slate-200 rounded-lg" data-testid="customer-payments">
         <div className="px-4 py-2.5 border-b border-slate-200 text-sm font-semibold text-slate-800">Payments</div>
-        <table className="w-full text-sm">
+        <table className="w-full text-sm pwa-table">
           <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
             <th className="text-left px-3 py-2">Receipt</th><th className="text-left px-3 py-2">Date</th>
             <th className="text-left px-3 py-2">Method</th><th className="text-right px-3 py-2">Amount</th>

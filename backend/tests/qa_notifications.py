@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inbox QA: NTF-01..04 — fan-out, isolation, reminder claim."""
+"""Inbox QA: NTF-01..09 — fan-out, isolation, reminder claim, mentions."""
 from __future__ import annotations
 
 import asyncio
@@ -135,7 +135,38 @@ def main():
     )
     check("NTF-04pre", st == 200 and reminded.get("reminder_sent") is False, f"st={st}")
 
-    from notifications import sweep_due_reminders
+    dev_name = me(dev).get("name") or ""
+    st, _ = req(
+        "POST",
+        f"/api/work/tasks/{tid}/comments",
+        {"body": f"@{dev_name} please check the filter"},
+        cookie=admin,
+    )
+    check("NTF-05pre", st == 200 and bool(dev_name), f"st={st} name={dev_name}")
+    st, dev_mentions = req("GET", "/api/notifications?limit=100", cookie=dev)
+    mention_rows = [
+        r for r in of_task(dev_mentions, tid, "mention")
+        if "please check the filter" in (r.get("body") or "")
+    ]
+    comment_dups = [
+        r for r in of_task(dev_mentions, tid, "comment")
+        if "please check the filter" in (r.get("body") or "")
+    ]
+    mention = mention_rows[0] if mention_rows else {}
+    check(
+        "NTF-05",
+        len(mention_rows) == 1 and len(comment_dups) == 0 and mention.get("repeat_until_read") is True and mention.get("actor_name"),
+        f"mentions={len(mention_rows)} dups={len(comment_dups)} actor={mention.get('actor_name')}",
+    )
+    st, feed = req("GET", f"/api/work/activity?entity_type=task&entity_id={tid}&limit=100", cookie=admin)
+    tagged = [
+        r for r in (feed or [])
+        if r.get("action") == "comment" and "please check the filter" in (r.get("comment") or "")
+    ]
+    tagged_names = [m.get("name") for m in ((tagged[0].get("mentions") if tagged else None) or [])]
+    check("NTF-06", st == 200 and dev_name in tagged_names, f"names={tagged_names}")
+
+    from notifications import bump_unseen_mentions, sweep_due_reminders
 
     async def claim():
         for _ in range(8):
@@ -144,23 +175,90 @@ def main():
             if status == 200 and row.get("reminder_sent") is True:
                 break
         else:
-            return False, 0, 0, 0
+            return False, 0, 0, 0, 0, 0
         _, dev_after = req("GET", "/api/notifications?limit=100", cookie=dev)
         first = len(of_task(dev_after, tid, "reminder_due"))
         extra = await sweep_due_reminders(limit=100)
         _, dev_final = req("GET", "/api/notifications?limit=100", cookie=dev)
         second = len(of_task(dev_final, tid, "reminder_due"))
-        return True, first, second, extra
+
+        bumped = 0
+        stayed = 0
+        if mention.get("id"):
+            from core import db, utcnow
+            old = (utcnow() - timedelta(minutes=16)).isoformat()
+            await db.notifications.update_one(
+                {"id": mention["id"]},
+                {"$set": {"ts": old, "created_at": old, "read": False, "repeat_until_read": True, "bump_count": 0}},
+            )
+            await bump_unseen_mentions()
+            row = await db.notifications.find_one({"id": mention["id"]}, {"_id": 0, "bump_count": 1})
+            bumped = int((row or {}).get("bump_count") or 0)
+            stale = (utcnow() - timedelta(hours=25)).isoformat()
+            await db.notifications.update_one(
+                {"id": mention["id"]},
+                {"$set": {"ts": old, "created_at": stale, "read": False, "repeat_until_read": True}},
+            )
+            await bump_unseen_mentions()
+            row2 = await db.notifications.find_one({"id": mention["id"]}, {"_id": 0, "bump_count": 1})
+            stayed = int((row2 or {}).get("bump_count") or 0)
+        return True, first, second, extra, bumped, stayed
 
     try:
-        claimed, first, second, extra = asyncio.run(claim())
+        claimed, first, second, extra, bumped, stayed = asyncio.run(claim())
     except Exception as exc:
-        claimed, first, second, extra = False, 0, 0, 0
+        claimed, first, second, extra, bumped, stayed = False, 0, 0, 0, 0, 0
         print(f"sweep error: {exc}")
     check(
         "NTF-04",
         claimed and first == 1 and second == 1,
         f"claimed={claimed} first={first} second={second} extra_sweep={extra}",
+    )
+    check("NTF-07", bumped == 1 and stayed == 1, f"bumped={bumped} stayed={stayed}")
+
+    st, seen = req("POST", "/api/notifications/seen", {"entity_type": "task", "entity_id": tid}, cookie=dev)
+    st, feed2 = req("GET", f"/api/work/activity?entity_type=task&entity_id={tid}&limit=100", cookie=admin)
+    tagged2 = [
+        r for r in (feed2 or [])
+        if r.get("action") == "comment" and "please check the filter" in (r.get("comment") or "")
+    ]
+    seen_names = [m.get("name") for m in ((tagged2[0].get("seen_by") if tagged2 else None) or [])]
+    check("NTF-08", st == 200 and dev_name in seen_names, f"seen={seen} names={seen_names}")
+
+    admin_id = me(admin)["id"]
+    st, solo = req(
+        "POST",
+        "/api/work/tasks",
+        {
+            "title": "NTF mention_ids outsider",
+            "task_type": "development",
+            "status": "todo",
+            "priority": "normal",
+            "assignee_id": admin_id,
+        },
+        cookie=admin,
+    )
+    sid = solo.get("id")
+    check("NTF-09pre", st == 200 and bool(sid), f"st={st}")
+    st, _ = req(
+        "POST",
+        f"/api/work/tasks/{sid}/comments",
+        {"body": "please look at this", "mention_ids": [ops_id]},
+        cookie=admin,
+    )
+    st, ops_inbox = req("GET", "/api/notifications?limit=100", cookie=ops)
+    outsider_mentions = [
+        r for r in of_task(ops_inbox, sid, "mention")
+        if "please look at this" in (r.get("body") or "")
+    ]
+    outsider_comments = [
+        r for r in of_task(ops_inbox, sid, "comment")
+        if "please look at this" in (r.get("body") or "")
+    ]
+    check(
+        "NTF-09",
+        st == 200 and bool(sid) and len(outsider_mentions) == 1 and len(outsider_comments) == 0,
+        f"mentions={len(outsider_mentions)} comments={len(outsider_comments)}",
     )
 
     print(f"\nResult: {PASS} passed, {FAIL} failed")

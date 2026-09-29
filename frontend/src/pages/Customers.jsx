@@ -67,7 +67,7 @@ export default function Customers() {
       <FilterBar schema={SCHEMA} values={values} setFilter={setFilter}
         clearFilters={clearFilters} activeCount={activeCount} testId="customer-filters" />
       <div className="bg-white border border-slate-200 rounded-lg">
-        <table className="w-full text-sm" data-testid="customers-table">
+        <table className="w-full text-sm pwa-table" data-testid="customers-table">
           <thead>
             <tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
               <th className="text-left px-3 py-2 font-semibold">Customer</th>
@@ -97,7 +97,7 @@ export default function Customers() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl bg-white" data-testid="customer-dialog">
           <DialogHeader><DialogTitle className="font-heading">New Customer</DialogTitle></DialogHeader>
-          <form onSubmit={submit} className="grid grid-cols-2 gap-3">
+          <form onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="col-span-2"><Label>Legal name *</Label>
               <Input data-testid="customer-legal-name-input" required value={form.legal_name} onChange={(e) => setForm({ ...form, legal_name: e.target.value })} /></div>
             <div><Label>Trade name</Label><Input value={form.trade_name} onChange={(e) => setForm({ ...form, trade_name: e.target.value })} /></div>

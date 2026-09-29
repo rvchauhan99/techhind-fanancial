@@ -74,7 +74,7 @@ export default function Invoices() {
         clearFilters={clearFilters} activeCount={activeCount} testId="invoice-filters" />
 
       <div className="bg-white border border-slate-200 rounded-lg">
-        <table className="w-full text-sm" data-testid="invoices-table">
+        <table className="w-full text-sm pwa-table" data-testid="invoices-table">
           <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
             <th className="text-left px-3 py-2">Number</th><th className="text-left px-3 py-2">Date</th>
             <th className="text-left px-3 py-2">Customer</th><th className="text-left px-3 py-2">Tax Scheme</th>
@@ -110,7 +110,8 @@ export default function Invoices() {
                     <a data-testid={`download-invoice-pdf-${i.id}`} href={pdfUrl(`/invoices/${i.id}/pdf`)}
                       target="_blank" rel="noreferrer" title="Download PDF"
                       onClick={(e) => e.stopPropagation()}
-                      className="inline-flex p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-[#0F284E]">
+                      className="inline-flex p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-[#0F284E]"
+                      aria-label="Download PDF">
                       <FileDown className="w-3.5 h-3.5" /></a>)}
                 </td>
               </tr>

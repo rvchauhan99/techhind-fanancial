@@ -88,7 +88,7 @@ export default function Projects() {
       <FilterBar schema={schema} values={values} setFilter={setFilter}
         clearFilters={clearFilters} activeCount={activeCount} testId="project-filters" />
       <div className="bg-white border border-slate-200 rounded-lg" data-testid="projects-table">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm pwa-table">
           <thead>
             <tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
               <th className="text-left px-3 py-2">Number</th>
@@ -127,7 +127,7 @@ export default function Projects() {
             <div><Label>Description</Label>
               <Input data-testid="project-desc" value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div><Label>Status</Label>
                 <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
                   <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>

@@ -1,11 +1,13 @@
-import React from "react"
-import { X } from "lucide-react"
+import React, { useState } from "react"
+import { SlidersHorizontal, X } from "lucide-react"
 import { Input } from "../ui/input"
 import { Label } from "../ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select"
 import { Button } from "../ui/button"
 import { FIELD } from "./types"
 import { useDebouncedDraft } from "../../hooks/useListFilters"
+import { Sheet, SheetContent, SheetTitle } from "../ui/sheet"
+import { usePhone } from "../../hooks/usePhone"
 
 function FieldShell({ label, children, className = "" }) {
   return (
@@ -55,11 +57,11 @@ function NumberRangeField({ field, values, setFilter }) {
       <div className="flex items-center gap-1">
         <Input data-testid={`filter-${minKey}`} type="number" step="any" placeholder="Min"
           value={values[minKey] || ""} onChange={(e) => setFilter(minKey, e.target.value)}
-          className="h-8 text-xs font-mono bg-white w-24" />
+          className="h-8 text-xs font-mono bg-white min-w-0 flex-1" />
         <span className="text-slate-400 text-xs">–</span>
         <Input data-testid={`filter-${maxKey}`} type="number" step="any" placeholder="Max"
           value={values[maxKey] || ""} onChange={(e) => setFilter(maxKey, e.target.value)}
-          className="h-8 text-xs font-mono bg-white w-24" />
+          className="h-8 text-xs font-mono bg-white min-w-0 flex-1" />
       </div>
     </FieldShell>
   )
@@ -83,11 +85,11 @@ function DateRangeField({ field, values, setFilter }) {
       <div className="flex items-center gap-1">
         <Input data-testid={`filter-${fromKey}`} type="date" value={values[fromKey] || ""}
           onChange={(e) => setFilter(fromKey, e.target.value)}
-          className="h-8 text-xs font-mono bg-white w-32" />
+          className="h-8 text-xs font-mono bg-white min-w-0 flex-1" />
         <span className="text-slate-400 text-xs">–</span>
         <Input data-testid={`filter-${toKey}`} type="date" value={values[toKey] || ""}
           onChange={(e) => setFilter(toKey, e.target.value)}
-          className="h-8 text-xs font-mono bg-white w-32" />
+          className="h-8 text-xs font-mono bg-white min-w-0 flex-1" />
       </div>
     </FieldShell>
   )
@@ -147,12 +149,48 @@ function renderField(field, values, setFilter) {
 
 /**
  * Dense filter bar. Tabs / view switches stay outside (above) this component.
+ * On a phone, search stays inline and the rest open in a filters sheet.
  */
 export default function FilterBar({ schema, values, setFilter, clearFilters, activeCount = 0, testId = "filter-bar" }) {
+  const phone = usePhone()
+  const [open, setOpen] = useState(false)
+  const searchFields = schema.filter((field) => field.type === FIELD.TEXT)
+  const extraFields = schema.filter((field) => field.type !== FIELD.TEXT)
+  const useSheet = phone && extraFields.length > 0
+
   return (
     <div className="flex flex-wrap items-end gap-2 mb-2" data-testid={testId}>
-      {schema.map((f) => renderField(f, values, setFilter))}
-      {activeCount > 0 && (
+      {(useSheet ? searchFields : schema).map((field) => renderField(
+        useSheet && field.type === FIELD.TEXT ? { ...field, width: "w-full min-w-0 flex-1" } : field,
+        values,
+        setFilter,
+      ))}
+      {useSheet && (
+        <>
+          <Button type="button" variant="outline" size="sm" data-testid="filter-more-btn"
+            onClick={() => setOpen(true)}
+            className="h-8 px-2 text-xs bg-white">
+            <SlidersHorizontal className="w-3.5 h-3.5 mr-1" />
+            Filters{activeCount > 0 ? ` (${activeCount})` : ""}
+          </Button>
+          <Sheet open={open} onOpenChange={setOpen}>
+            <SheetContent side="bottom" className="bg-white text-slate-900 max-h-[85vh] overflow-y-auto rounded-t-xl p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              <SheetTitle className="font-heading text-base text-left">Filters</SheetTitle>
+              <div className="mt-3 flex flex-col gap-3">
+                {extraFields.map((field) => renderField({ ...field, width: "w-full" }, values, setFilter))}
+              </div>
+              {activeCount > 0 && (
+                <Button type="button" variant="ghost" size="sm" data-testid="filter-clear-btn"
+                  onClick={() => { clearFilters(); setOpen(false) }}
+                  className="mt-3 h-8 px-2 text-xs text-slate-600">
+                  <X className="w-3.5 h-3.5 mr-1" /> Clear ({activeCount})
+                </Button>
+              )}
+            </SheetContent>
+          </Sheet>
+        </>
+      )}
+      {!useSheet && activeCount > 0 && (
         <Button type="button" variant="ghost" size="sm" data-testid="filter-clear-btn"
           onClick={clearFilters}
           className="h-8 px-2 text-xs text-slate-600">

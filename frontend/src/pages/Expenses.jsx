@@ -112,7 +112,7 @@ export default function Expenses() {
       <FilterBar schema={schema} values={values} setFilter={setFilter}
         clearFilters={clearFilters} activeCount={activeCount} testId="voucher-filters" />
       <div className="bg-white border border-slate-200 rounded-lg">
-        <table className="w-full text-sm" data-testid="vouchers-table">
+        <table className="w-full text-sm pwa-table" data-testid="vouchers-table">
           <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
             <th className="text-left px-3 py-2">Voucher No</th><th className="text-left px-3 py-2">Date</th>
             <th className="text-left px-3 py-2">Category</th><th className="text-left px-3 py-2">Narration</th>
@@ -168,7 +168,7 @@ export default function Expenses() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-xl bg-white" data-testid="voucher-dialog">
           <DialogHeader><DialogTitle className="font-heading">New Expense Voucher</DialogTitle></DialogHeader>
-          <form onSubmit={save} className="grid grid-cols-2 gap-3">
+          <form onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><Label>Date *</Label>
               <Input data-testid="voucher-date-input" type="date" required value={form.voucher_date} onChange={(e) => setForm({ ...form, voucher_date: e.target.value })} /></div>
             <div><Label>Type</Label>

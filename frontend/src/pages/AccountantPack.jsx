@@ -102,7 +102,7 @@ export default function AccountantPack() {
             expense voucher / purchase bill PDFs + voucher attachments + MANIFEST.txt.
           </p>
           <a data-testid="pack-download-btn" href={pdfUrl(`/accountant-pack?month=${month}`)}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#0F284E] hover:bg-[#17386D] text-white rounded-md px-3 py-2 transition-colors">
+            className="inline-flex w-full sm:w-auto justify-center items-center gap-1.5 text-xs font-semibold bg-[#0F284E] hover:bg-[#17386D] text-white rounded-md px-3 py-2 min-h-11 transition-colors">
             <FolderArchive className="w-3.5 h-3.5" /> Download accountant-pack-{month}.zip</a>
         </div>
         <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-2" data-testid="gstr-card">
@@ -111,12 +111,12 @@ export default function AccountantPack() {
             <h3 className="text-sm font-semibold text-slate-800">GST Return JSON (sandbox)</h3>
           </div>
           <p className="text-xs text-slate-500">Simplified GSTR-1 / GSTR-3B from approved docs — not portal upload format.</p>
-          <div className="flex gap-2 pt-0.5">
+          <div className="flex flex-col sm:flex-row gap-2 pt-0.5">
             <a data-testid="gstr1-download-btn" href={pdfUrl(`/reports/gstr1?month=${month}`)}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md px-3 py-2 transition-colors">
+              className="inline-flex w-full sm:w-auto justify-center items-center gap-1.5 text-xs font-semibold border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md px-3 py-2 min-h-11 transition-colors">
               <FileJson className="w-3.5 h-3.5" /> GSTR-1</a>
             <a data-testid="gstr3b-download-btn" href={pdfUrl(`/reports/gstr3b?month=${month}`)}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md px-3 py-2 transition-colors">
+              className="inline-flex w-full sm:w-auto justify-center items-center gap-1.5 text-xs font-semibold border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md px-3 py-2 min-h-11 transition-colors">
               <FileJson className="w-3.5 h-3.5" /> GSTR-3B</a>
           </div>
         </div>

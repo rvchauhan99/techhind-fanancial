@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from "react"
+import React, { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { Bell } from "lucide-react"
+import { toast } from "sonner"
 import api from "../lib/api"
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
 
@@ -26,11 +27,19 @@ export function NotificationBell() {
   const [count, setCount] = useState(0)
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
+  const toasted = useRef("")
 
   const loadCount = useCallback(async () => {
     try {
       const r = await api.get("/notifications/unread-count")
       setCount(Number(r.data?.count || 0))
+      const mention = r.data?.mention
+      if (!mention?.id) return
+      const key = `${mention.id}:${mention.ts || ""}:${mention.bump_count || 0}`
+      if (toasted.current === key) return
+      toasted.current = key
+      const who = mention.actor_name ? `${mention.actor_name}: ` : ""
+      toast.info(`${who}${mention.title}`, { description: mention.body || undefined })
     } catch {
       /* inbox unreachable — leave the last count */
     }

@@ -34,7 +34,7 @@ export default function ActivityHistory({ entityType, entityId }) {
         Activity history
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm pwa-table">
           <thead>
             <tr className="bg-slate-50 text-slate-600 text-[10px] uppercase tracking-wider">
               <th className="text-left px-3 py-1.5">Time</th>

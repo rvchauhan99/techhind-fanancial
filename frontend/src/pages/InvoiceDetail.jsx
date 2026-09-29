@@ -91,7 +91,7 @@ export default function InvoiceDetail() {
   return (
     <Layout title={`${title} ${inv.invoice_no || "(Draft)"}`}
       actions={
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-nowrap shrink-0">
           <button data-testid="back-to-invoices" onClick={() => navigate("/invoices")}
             className="text-xs font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1 mr-2">
             <ArrowLeft className="w-3.5 h-3.5" /> Back</button>
@@ -132,7 +132,7 @@ export default function InvoiceDetail() {
               </div>
               <StatusBadge value={inv.status} />
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-xs">
               <div><div className="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Place of Supply</div>
                 <div className="mt-0.5 font-medium">{inv.place_of_supply?.state} ({inv.place_of_supply?.code})</div>
                 {inv.pos_override_reason && <div className="text-amber-600 mt-0.5">Override: {inv.pos_override_reason}</div>}</div>
@@ -155,7 +155,7 @@ export default function InvoiceDetail() {
           </div>
 
           <div className="bg-white border border-slate-200 rounded-lg overflow-hidden" data-testid="invoice-lines">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm pwa-table">
               <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
                 <th className="text-left px-3 py-2">#</th><th className="text-left px-3 py-2">Description</th>
                 <th className="text-left px-3 py-2">HSN/SAC</th><th className="text-right px-3 py-2">Qty</th>

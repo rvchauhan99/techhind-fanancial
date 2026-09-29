@@ -368,6 +368,34 @@ def main():
     )
     check("SUP-02", st_p2 == 200 and st_r2 == 200, f"patch={st_p2} reply={st_r2}")
 
+    # SUP-17 file-only finance reply stores placeholder body
+    raw17, ctype17 = multipart(
+        {"body": "", "visibility": "public"},
+        [("files", "qa-ticket.png", tiny_png(), "image/png")],
+    )
+    st17, msg17, _ = req(
+        "POST",
+        f"/api/tickets/{tid}/messages",
+        cookie=admin,
+        raw=raw17,
+        ctype=ctype17,
+    )
+    atts17 = (msg17 or {}).get("attachments") or []
+    check(
+        "SUP-17a",
+        st17 == 200 and msg17.get("body") == "(attachment)" and len(atts17) >= 1,
+        f"st={st17} body={msg17.get('body')!r} n={len(atts17)}",
+    )
+    raw_empty, ctype_empty = multipart({"body": "", "visibility": "public"})
+    st_empty, _, _ = req(
+        "POST",
+        f"/api/tickets/{tid}/messages",
+        cookie=admin,
+        raw=raw_empty,
+        ctype=ctype_empty,
+    )
+    check("SUP-17b", st_empty == 400, f"st={st_empty}")
+
     # SUP-15 public reply emails requester (mock ok)
     # Ensure requester_email set; reply should not 500
     req("PATCH", f"/api/tickets/{tid}", {"status": "open"}, cookie=admin)

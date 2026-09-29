@@ -7,13 +7,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import timedelta
 from typing import Iterable
 
-from core import db, iso_now, new_id
+from core import db, iso_now, new_id, utcnow
 
 logger = logging.getLogger("notifications")
 
 OPEN_TASK_STATUSES = ("backlog", "todo", "in_progress", "in_review", "blocked")
+MENTION_NUDGE = timedelta(minutes=15)
+MENTION_MAX_AGE = timedelta(hours=24)
 
 
 def public_notification(doc: dict) -> dict:
@@ -39,6 +42,9 @@ def public_notification(doc: dict) -> dict:
         "read": bool(doc.get("read")),
         "read_at": doc.get("read_at"),
         "ts": doc.get("ts"),
+        "activity_id": doc.get("activity_id") or "",
+        "bump_count": int(doc.get("bump_count") or 0),
+        "repeat_until_read": bool(doc.get("repeat_until_read")),
     }
 
 
@@ -55,6 +61,8 @@ async def notify_users(
     entity_id: str,
     href: str,
     ticket_id: str | None = None,
+    activity_id: str | None = None,
+    repeat_until_read: bool = False,
 ) -> int:
     """Insert one unread row per recipient. Drops blanks, duplicates, and the actor.
 
@@ -89,9 +97,14 @@ async def notify_users(
             "read": False,
             "read_at": None,
             "ts": now,
+            "created_at": now,
+            "bump_count": 0,
+            "repeat_until_read": bool(repeat_until_read),
         }
         if ticket_id:
             doc["ticket_id"] = ticket_id
+        if activity_id:
+            doc["activity_id"] = activity_id
         docs.append(doc)
     try:
         await db.notifications.insert_many(docs)
@@ -148,12 +161,37 @@ async def sweep_due_reminders(limit: int = 50) -> int:
     return sent
 
 
+async def bump_unseen_mentions() -> int:
+    """Move still-unread mentions back to the top every 15 minutes, for up to 24 hours."""
+    now = utcnow()
+    cutoff = (now - MENTION_NUDGE).isoformat()
+    oldest = (now - MENTION_MAX_AGE).isoformat()
+    try:
+        res = await db.notifications.update_many(
+            {
+                "type": "mention",
+                "read": False,
+                "repeat_until_read": True,
+                "ts": {"$lte": cutoff},
+                "created_at": {"$gte": oldest},
+            },
+            {"$set": {"ts": iso_now()}, "$inc": {"bump_count": 1}},
+        )
+    except Exception:
+        logger.exception("mention bump failed")
+        return 0
+    return int(res.modified_count or 0)
+
+
 async def reminder_sweep_loop(stop: asyncio.Event, interval: float = 60.0) -> None:
     while not stop.is_set():
         try:
             n = await sweep_due_reminders()
             if n:
                 logger.info("reminder sweep sent=%s", n)
+            bumped = await bump_unseen_mentions()
+            if bumped:
+                logger.info("mention bump count=%s", bumped)
         except Exception:
             logger.exception("reminder sweep failed")
         try:

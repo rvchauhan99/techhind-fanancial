@@ -33,6 +33,11 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((cfg) => {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    const offline = new Error("You are offline. Finance actions need a connection.");
+    offline.code = "OFFLINE";
+    return Promise.reject(offline);
+  }
   if (API_CONFIG_ERROR) {
     return Promise.reject(new Error("REACT_APP_BACKEND_URL is not configured"));
   }
@@ -85,6 +90,7 @@ api.interceptors.response.use(
 
 export function apiError(e) {
   if (API_CONFIG_ERROR) return "API URL is not configured (REACT_APP_BACKEND_URL)";
+  if (e?.code === "OFFLINE") return e.message;
   if (e?.code === "ECONNABORTED") return "Request timed out — check API connectivity";
   if (!e?.response && e?.message) return e.message;
   const detail = e?.response?.data?.detail;

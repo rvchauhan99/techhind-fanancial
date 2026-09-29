@@ -212,7 +212,7 @@ export default function BankStatement() {
         clearFilters={clearFilters} activeCount={activeCount} testId="stmt-filters" />
 
       <div className="bg-white border border-slate-200 rounded-lg overflow-auto">
-        <table className="w-full text-sm" data-testid="statement-table">
+        <table className="w-full text-sm pwa-table" data-testid="statement-table">
           <thead className="sticky top-0">
             <tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
               <th className="text-left px-3 py-2">Date</th>
@@ -274,7 +274,7 @@ export default function BankStatement() {
             <div><Label>Narration *</Label>
               <Input data-testid="manual-narration" required value={manual.narration}
                 onChange={(e) => setManual({ ...manual, narration: e.target.value })} /></div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div><Label>Side</Label>
                 <Select value={manual.side} onValueChange={(v) => setManual({ ...manual, side: v })}>
                   <SelectTrigger data-testid="manual-side"><SelectValue /></SelectTrigger>
@@ -311,7 +311,7 @@ export default function BankStatement() {
                   ))}
                 </SelectContent>
               </Select></div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div><Label>Date *</Label>
                 <Input type="date" required value={xfer.txn_date} onChange={(e) => setXfer({ ...xfer, txn_date: e.target.value })} /></div>
               <div><Label>Amount *</Label>

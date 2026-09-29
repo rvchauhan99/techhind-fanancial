@@ -78,7 +78,7 @@ export default function Banks() {
         clearFilters={clearFilters} activeCount={activeCount} testId="bank-filters" />
 
       <div className="bg-white border border-slate-200 rounded-lg">
-        <table className="w-full text-sm" data-testid="banks-table">
+        <table className="w-full text-sm pwa-table" data-testid="banks-table">
           <thead>
             <tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
               <th className="text-left px-3 py-2">Account</th>
@@ -123,7 +123,7 @@ export default function Banks() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg bg-white" data-testid="bank-dialog">
           <DialogHeader><DialogTitle className="font-heading">Add Bank Account</DialogTitle></DialogHeader>
-          <form onSubmit={save} className="grid grid-cols-2 gap-3">
+          <form onSubmit={save} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label>Type</Label>
               <Select value={form.account_type} onValueChange={(v) => setForm({ ...form, account_type: v })}>

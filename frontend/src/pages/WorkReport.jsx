@@ -38,7 +38,7 @@ export default function WorkReport() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white border border-slate-200 rounded-lg" data-testid="report-by-category">
           <div className="px-3 py-2 border-b border-slate-200 text-sm font-semibold">By category</div>
-          <table className="w-full text-sm">
+          <table className="w-full text-sm pwa-table">
             <tbody>
               {data.by_category.map((r) => (
                 <tr key={r.category} className="border-t border-slate-100">
@@ -52,7 +52,7 @@ export default function WorkReport() {
         </div>
         <div className="bg-white border border-slate-200 rounded-lg" data-testid="report-by-status">
           <div className="px-3 py-2 border-b border-slate-200 text-sm font-semibold">By status</div>
-          <table className="w-full text-sm">
+          <table className="w-full text-sm pwa-table">
             <tbody>
               {data.by_status.map((r) => (
                 <tr key={r.status} className="border-t border-slate-100">
@@ -66,7 +66,7 @@ export default function WorkReport() {
         </div>
         <div className="bg-white border border-slate-200 rounded-lg" data-testid="report-by-assignee">
           <div className="px-3 py-2 border-b border-slate-200 text-sm font-semibold">By assignee</div>
-          <table className="w-full text-sm">
+          <table className="w-full text-sm pwa-table">
             <tbody>
               {data.by_assignee.map((r) => (
                 <tr key={r.assignee_id || "u"} className="border-t border-slate-100">

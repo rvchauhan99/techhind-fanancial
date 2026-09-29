@@ -6,6 +6,7 @@ import api from "../lib/api";
 import { fmtINR } from "../lib/format";
 import Layout from "../components/Layout";
 import { useAuth } from "../context/AuthContext";
+import { usePhone } from "../hooks/usePhone";
 
 const AGING_COLORS = { current: "#94a3b8", "0-30": "#2563EB", "31-60": "#D97706", "61-90": "#EA580C", "90+": "#DC2626" };
 
@@ -35,7 +36,7 @@ function normalizeSummary(raw) {
 
 function Kpi({ tid, title, value, sub, icon: Icon, tone = "text-slate-900" }) {
   return (
-    <div data-testid={tid} className="bg-white border border-slate-200 rounded-lg p-4 shadow-xs hover:shadow-sm transition-shadow">
+    <div data-testid={tid} className="bg-white border border-slate-200 rounded-lg p-3 md:p-4 shadow-xs hover:shadow-sm transition-shadow">
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{title}</span>
         <Icon className="w-4 h-4 text-slate-400" />
@@ -48,6 +49,7 @@ function Kpi({ tid, title, value, sub, icon: Icon, tone = "text-slate-900" }) {
 
 export default function Dashboard() {
   const { hasMenu, menus } = useAuth();
+  const phone = usePhone();
   const [data, setData] = useState(null);
   const [work, setWork] = useState(null);
   const [financeLoaded, setFinanceLoaded] = useState(false);
@@ -142,9 +144,9 @@ export default function Dashboard() {
       {data && (
       <>
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <div className="xl:col-span-2 bg-white border border-slate-200 rounded-lg p-4" data-testid="trend-chart">
+        <div className="xl:col-span-2 bg-white border border-slate-200 rounded-lg p-3 md:p-4" data-testid="trend-chart">
           <h3 className="text-sm font-semibold text-slate-800 mb-3">Billed vs Collected — last 6 months</h3>
-          <ResponsiveContainer width="100%" height={240}>
+          <ResponsiveContainer width="100%" height={phone ? 168 : 240}>
             <BarChart data={trend} barGap={2}>
               <XAxis dataKey="month" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
@@ -155,9 +157,9 @@ export default function Dashboard() {
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <div className="bg-white border border-slate-200 rounded-lg p-4" data-testid="ar-aging-card">
+        <div className="bg-white border border-slate-200 rounded-lg p-3 md:p-4" data-testid="ar-aging-card">
           <h3 className="text-sm font-semibold text-slate-800 mb-3">AR Aging</h3>
-          <ResponsiveContainer width="100%" height={240}>
+          <ResponsiveContainer width="100%" height={phone ? 168 : 240}>
             <BarChart data={arAging} layout="vertical">
               <XAxis type="number" hide />
               <YAxis type="category" dataKey="bucket" width={56} tick={{ fontSize: 11 }} />

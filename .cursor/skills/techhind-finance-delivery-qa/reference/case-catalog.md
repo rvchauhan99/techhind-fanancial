@@ -16,15 +16,15 @@ Distilled from `docs/PROD-READINESS-SIGN-OFF.md`, `docs/E2E-SIGN-OFF.md`, and `t
 | Prod cutover | CUTOVER-01 … CUTOVER-05 | Bootstrap 1 admin; bank CSV 28 lines → live ₹209174.04; parties/subs; expenses/TDS; no UrbanKart / no double bank post |
 | Dashboard / aging | DASH-01 … DASH-04 | KPIs, AR/AP aging |
 | Import / reports / period | OPS-01 … OPS-06, OPS-PERIOD-DATE, OPS-IMPORT-PAY-01 | CSV, pack, GSTR, period lock, payment import txn |
-| Support tickets | SUP-01 … SUP-04, SUP-10 … SUP-16 | Manual create/reply/status; bridge key; internal notes stripped; support_agent write; assignee/mine/SLA; email mock; Solar status filter + file download |
+| Support tickets | SUP-01 … SUP-04, SUP-10 … SUP-17 | Manual create/reply/status; bridge key; internal notes stripped; support_agent write; assignee/mine/SLA; email mock; Solar status filter + file download; file-only finance reply (`(attachment)` body) |
 | Org RBAC | RBAC-01 … RBAC-04, RBAC-FL-01 … RBAC-FL-03 | Seed roles/menus; `/rbac/me` menus; developer finance 403; freelancer tasks+tickets only |
 | Work mgmt | WRK-01 … WRK-05 | Project+task CRUD; assignee any user; activity; viewer create 403; dashboard/report |
 | Task module Pro | TSK-01 … TSK-10 | Types/observers; start/complete; board/deadline; checklist; attachments; reminders; quick testing; viewer 403; reassign manage |
-| Notifications | NTF-01 … NTF-04 | Fan-out excludes actor; comment reaches assignee and observer; user cannot read another inbox row; reminder claim sets `reminder_sent` once |
+| Notifications | NTF-01 … NTF-09 | Fan-out excludes actor; comment reaches assignee and observer; user cannot read another inbox row; reminder claim; @mention is one inbox row; 15-minute bump stops at 24 hours; seen-by after open; mention_ids notifies a user not on the task |
 
 ## Browser routes (16+)
 
-login, dashboard, subscriptions, invoices, invoice detail (+ Activity panel), expenses, **bank ledger** (`/banks`), settings (Users + Security→profile), **profile** (`/profile`), imports, accountant-pack, period-close, aging, customers, products, vendors, payments, audit (admin/accountant only), **support tickets** (`/tickets`), **projects / tasks (list|kanban|deadline) / task detail / work-report / roles**.
+login, dashboard, subscriptions, invoices, invoice detail (+ Activity panel), expenses, **bank ledger** (`/banks`), settings (Users + Security→profile), **profile** (`/profile`), imports, accountant-pack, period-close, aging, customers, products, vendors, payments, audit (admin/accountant only), **support tickets** (`/tickets`, ticket detail dropzone + chips), **projects / tasks (list|kanban|deadline) / task detail (Files dropzone) / work-report / roles**.
 
 Default web for local QA when `:3000` is busy: `WEB_BASE=http://localhost:3011`.
 

@@ -72,7 +72,7 @@ function CompanyTab() {
     <form onSubmit={save} className="grid grid-cols-1 xl:grid-cols-2 gap-4" data-testid="company-form">
       <div className="bg-white border border-slate-200 rounded-lg p-5 space-y-3">
         <h3 className="text-sm font-semibold text-slate-800">Legal & Tax</h3>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="col-span-2"><Label>Legal name</Label>
             <Input data-testid="company-name-input" disabled={ro} value={form.legal_name || ""} onChange={(e) => setForm({ ...form, legal_name: e.target.value })} /></div>
           <div><Label>GSTIN</Label><Input disabled={ro} value={form.gstin || ""} onChange={(e) => setForm({ ...form, gstin: e.target.value })} className="font-mono" /></div>
@@ -103,7 +103,7 @@ function CompanyTab() {
           <div><Label>Phone</Label><Input disabled={ro} value={form.phone || ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
         </div>
         <h3 className="text-sm font-semibold text-slate-800 pt-2">Bank & UPI</h3>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div><Label>Bank</Label><Input disabled={ro} value={bank.bank_name || ""} onChange={(e) => setBank("bank_name", e.target.value)} /></div>
           <div><Label>Branch</Label><Input disabled={ro} value={bank.branch || ""} onChange={(e) => setBank("branch", e.target.value)} /></div>
           <div><Label>Account no</Label><Input disabled={ro} value={bank.account_no || ""} onChange={(e) => setBank("account_no", e.target.value)} className="font-mono" /></div>
@@ -119,7 +119,7 @@ function CompanyTab() {
             <AssetCard kind="signature" pathKey="signature_path" label="Signature" testId="company-signature-preview" inputRef={signatureRef} />
             <AssetCard kind="stamp" pathKey="stamp_path" label="Stamp / Seal" testId="company-stamp-preview" inputRef={stampRef} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><Label>Brand primary</Label>
               <div className="flex gap-2 items-center">
                 <input type="color" disabled={ro} value={(form.brand || {}).primary || "#0F284E"}
@@ -269,7 +269,7 @@ function UsersTab() {
         <Button size="sm" data-testid="new-user-btn" onClick={() => setOpen(true)} className="bg-[#0F284E] hover:bg-[#17386D] text-white">
           <Plus className="w-3.5 h-3.5 mr-1" /> New User</Button>
       </div>
-      <table className="w-full text-sm" data-testid="users-table">
+      <table className="w-full text-sm pwa-table" data-testid="users-table">
         <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
           <th className="text-left px-3 py-2">Name</th><th className="text-left px-3 py-2">Email</th>
           <th className="text-left px-3 py-2">Role</th><th className="text-left px-3 py-2">2FA</th>
@@ -370,10 +370,10 @@ export default function Settings() {
 
   return (
     <Layout title="Settings & Masters">
-      <div className="flex border border-slate-200 rounded-md overflow-hidden bg-white w-fit" data-testid="settings-tabs">
+      <div className="flex border border-slate-200 rounded-md overflow-x-auto bg-white w-full max-w-full" data-testid="settings-tabs">
         {tabs.map(([k, label]) => (
           <button key={k} data-testid={`settings-tab-${k}`} onClick={() => setTab(k)}
-            className={`px-3 py-1.5 text-xs font-semibold transition-colors ${tab === k ? "bg-[#0F284E] text-white" : "text-slate-600 hover:bg-slate-50"}`}>{label}</button>
+            className={`shrink-0 px-3 py-1.5 text-xs font-semibold transition-colors ${tab === k ? "bg-[#0F284E] text-white" : "text-slate-600 hover:bg-slate-50"}`}>{label}</button>
         ))}
       </div>
       {tab === "company" && isAdmin && <CompanyTab />}
@@ -382,7 +382,7 @@ export default function Settings() {
       {tab === "series" && isAdmin && (
         <div className="bg-white border border-slate-200 rounded-lg max-w-2xl">
           <div className="px-4 py-2.5 border-b border-slate-200 text-sm font-semibold text-slate-800">Number Series (TH/{"{FY}"}/{"{SEQ:4}"})</div>
-          <table className="w-full text-sm" data-testid="series-table">
+          <table className="w-full text-sm pwa-table" data-testid="series-table">
             <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
               <th className="text-left px-3 py-2">Document</th><th className="text-left px-3 py-2">Fiscal Year</th>
               <th className="text-right px-3 py-2">Next Sequence</th></tr></thead>

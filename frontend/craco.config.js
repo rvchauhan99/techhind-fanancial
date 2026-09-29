@@ -98,6 +98,33 @@ let webpackConfig = {
       if (config.enableHealthCheck && healthPluginInstance) {
         webpackConfig.plugins.push(healthPluginInstance);
       }
+
+      if (process.env.NODE_ENV === "production") {
+        const { GenerateSW } = require("workbox-webpack-plugin");
+        webpackConfig.plugins.push(
+          new GenerateSW({
+            skipWaiting: false,
+            clientsClaim: false,
+            cleanupOutdatedCaches: true,
+            navigateFallback: "/index.html",
+            navigateFallbackDenylist: [/^\/api\//],
+            maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+            exclude: [/\.map$/, /asset-manifest\.json$/],
+            additionalManifestEntries: [
+              { url: "/offline.html", revision: "1" },
+              { url: "/manifest.webmanifest", revision: "1" },
+              { url: "/icons/icon-192.png", revision: "1" },
+              { url: "/icons/icon-512.png", revision: "1" },
+            ],
+            runtimeCaching: [
+              {
+                urlPattern: /\/api\//,
+                handler: "NetworkOnly",
+              },
+            ],
+          })
+        );
+      }
       return webpackConfig;
     },
   },

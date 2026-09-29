@@ -79,7 +79,7 @@ export default function Imports() {
             <span className="text-xs font-semibold text-emerald-700">{result.valid} valid</span>
             <span className="text-xs font-semibold text-red-700">{result.invalid} invalid</span>
           </div>
-          <table className="w-full text-sm">
+          <table className="w-full text-sm pwa-table">
             <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
               <th className="text-left px-3 py-2 w-16">Row</th><th className="text-left px-3 py-2 w-24">Status</th>
               <th className="text-left px-3 py-2">Detail</th></tr></thead>

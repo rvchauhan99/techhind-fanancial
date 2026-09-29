@@ -109,7 +109,7 @@ export default function Payments() {
       <FilterBar schema={schema} values={values} setFilter={setFilter}
         clearFilters={clearFilters} activeCount={activeCount} testId="payment-filters" />
       <div className="bg-white border border-slate-200 rounded-lg">
-        <table className="w-full text-sm" data-testid="payments-table">
+        <table className="w-full text-sm pwa-table" data-testid="payments-table">
           <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
             <th className="text-left px-3 py-2">Receipt No</th><th className="text-left px-3 py-2">Date</th>
             <th className="text-left px-3 py-2">Customer</th><th className="text-left px-3 py-2">Method</th>
@@ -146,7 +146,7 @@ export default function Payments() {
         <DialogContent className="max-w-2xl bg-white" data-testid="payment-dialog">
           <DialogHeader><DialogTitle className="font-heading">Record Payment</DialogTitle></DialogHeader>
           <form onSubmit={submit} className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="col-span-2"><Label>Customer *</Label>
                 <Select value={form.customer_id} onValueChange={(v) => setForm({ ...form, customer_id: v })}>
                   <SelectTrigger data-testid="payment-customer-select"><SelectValue placeholder="Select customer" /></SelectTrigger>
@@ -174,7 +174,7 @@ export default function Payments() {
             {openInvoices.length > 0 && (
               <div className="border border-slate-200 rounded-md overflow-hidden">
                 <div className="px-3 py-1.5 bg-slate-50 text-[11px] font-semibold uppercase text-slate-600">Allocate to open invoices (optional)</div>
-                <table className="w-full text-xs">
+                <table className="w-full text-xs pwa-table">
                   <thead><tr className="bg-slate-100 text-[10px] uppercase"><th className="text-left px-2 py-1">Invoice</th><th className="text-right px-2 py-1">Balance</th><th className="text-right px-2 py-1">Allocate</th></tr></thead>
                   <tbody>
                     {openInvoices.map((inv) => (

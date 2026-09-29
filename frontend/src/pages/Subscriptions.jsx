@@ -200,7 +200,7 @@ export default function Subscriptions() {
         clearFilters={clearFilters} activeCount={activeCount} testId="subscription-filters" />
 
       <div className="bg-white border border-slate-200 rounded-lg">
-        <table className="w-full text-sm" data-testid="subscriptions-table">
+        <table className="w-full text-sm pwa-table" data-testid="subscriptions-table">
           <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
             <th className="text-left px-3 py-2">Customer</th><th className="text-left px-3 py-2">Plan</th>
             <th className="text-left px-3 py-2">Status</th><th className="text-left px-3 py-2">Cycle</th>
@@ -245,7 +245,7 @@ export default function Subscriptions() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-xl bg-white" data-testid="subscription-dialog">
           <DialogHeader><DialogTitle className="font-heading">{editing ? "Edit Subscription" : "New Subscription"}</DialogTitle></DialogHeader>
-          <form onSubmit={submit} className="grid grid-cols-2 gap-3">
+          <form onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="col-span-2"><Label>Customer *</Label>
               <Select value={form.customer_id} onValueChange={(v) => setForm({ ...form, customer_id: v })}>
                 <SelectTrigger data-testid="sub-customer-select"><SelectValue placeholder="Select customer" /></SelectTrigger>
@@ -293,7 +293,7 @@ export default function Subscriptions() {
               Renew — {renewing?.customer_name || renewing?.plan_name}
             </DialogTitle>
           </DialogHeader>
-          <form onSubmit={submitRenew} className="grid grid-cols-2 gap-3">
+          <form onSubmit={submitRenew} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="col-span-2"><Label>Product / plan</Label>
               <Select value={renewForm.product_id || "none"} onValueChange={(v) => v !== "none" && pickRenewProduct(v)}>
                 <SelectTrigger data-testid="renew-product-select"><SelectValue placeholder="Select plan" /></SelectTrigger>

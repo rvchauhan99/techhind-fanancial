@@ -84,6 +84,7 @@ async def _work_activity(
     summary: str,
     diff: dict | None = None,
     comment: str | None = None,
+    mention_ids: list | None = None,
 ):
     row = {
         "id": new_id(),
@@ -94,6 +95,7 @@ async def _work_activity(
         "summary": summary,
         "diff": diff or {},
         "comment": comment,
+        "mention_ids": mention_ids or [],
         "user_id": user.get("id"),
         "user_name": user.get("name"),
         "role": user.get("role"),
@@ -135,6 +137,8 @@ async def _inbox(
     body: str,
     entity_type: str,
     entity_id: str,
+    activity_id: str | None = None,
+    repeat_until_read: bool = False,
 ) -> None:
     from notifications import notify_users
 
@@ -150,7 +154,197 @@ async def _inbox(
         entity_type=entity_type,
         entity_id=entity_id,
         href=href,
+        activity_id=activity_id,
+        repeat_until_read=repeat_until_read,
     )
+
+
+async def _resolve_mentions(text: str) -> list[str]:
+    """Match @Name tokens: full name, unique first name, or unique email local-part.
+
+    Longest alias wins. `@` inside an email (letter/@) is ignored.
+    """
+    rows = await db.users.find(
+        {"active": {"$ne": False}},
+        {"_id": 0, "id": 1, "name": 1, "email": 1},
+    ).to_list(500)
+    fulls: list[tuple[str, str]] = []
+    first_counts: dict[str, list[str]] = {}
+    local_counts: dict[str, list[str]] = {}
+    first_orig: dict[str, str] = {}
+    for u in rows:
+        uid = u.get("id") or ""
+        if not uid:
+            continue
+        name = (u.get("name") or "").strip()
+        email = (u.get("email") or "").strip()
+        if name:
+            fulls.append((name, uid))
+            first = name.split()[0]
+            key = first.lower()
+            first_counts.setdefault(key, []).append(uid)
+            first_orig.setdefault(key, first)
+        if email and "@" in email:
+            local = email.split("@", 1)[0].strip()
+            if local:
+                local_counts.setdefault(local.lower(), []).append(uid)
+
+    candidates: list[tuple[str, str]] = list(fulls)
+    seen_alias = {(n.lower(), uid) for n, uid in fulls}
+    for key, uids in first_counts.items():
+        uniq = list(dict.fromkeys(uids))
+        if len(uniq) != 1:
+            continue
+        uid = uniq[0]
+        alias = first_orig.get(key) or key
+        if (alias.lower(), uid) not in seen_alias:
+            candidates.append((alias, uid))
+            seen_alias.add((alias.lower(), uid))
+    for key, uids in local_counts.items():
+        uniq = list(dict.fromkeys(uids))
+        if len(uniq) != 1:
+            continue
+        uid = uniq[0]
+        if (key, uid) not in seen_alias:
+            candidates.append((key, uid))
+            seen_alias.add((key, uid))
+    candidates.sort(key=lambda pair: len(pair[0]), reverse=True)
+
+    found: list[str] = []
+    seen: set[str] = set()
+    lower = text.lower()
+    i = 0
+    while i < len(text):
+        at = lower.find("@", i)
+        if at < 0:
+            break
+        if at > 0 and text[at - 1].isalnum():
+            i = at + 1
+            continue
+        rest = text[at + 1:]
+        rest_l = rest.lower()
+        matched = False
+        for alias, uid in candidates:
+            nlen = len(alias)
+            if not rest_l.startswith(alias.lower()):
+                continue
+            if nlen < len(rest) and rest[nlen].isalnum():
+                continue
+            if uid not in seen:
+                seen.add(uid)
+                found.append(uid)
+            i = at + 1 + nlen
+            matched = True
+            break
+        if not matched:
+            i = at + 1
+    return found
+
+
+async def _active_user_ids(ids: list | None) -> list[str]:
+    wanted: list[str] = []
+    seen: set[str] = set()
+    for raw in ids or []:
+        uid = raw.strip() if isinstance(raw, str) else ""
+        if not uid or uid in seen:
+            continue
+        seen.add(uid)
+        wanted.append(uid)
+    if not wanted:
+        return []
+    rows = await db.users.find(
+        {"id": {"$in": wanted}, "active": {"$ne": False}},
+        {"_id": 0, "id": 1},
+    ).to_list(500)
+    valid = {u["id"] for u in rows if u.get("id")}
+    return [uid for uid in wanted if uid in valid]
+
+
+async def _collect_mentions(text: str, extra_ids: list | None) -> list[str]:
+    parsed = await _resolve_mentions(text)
+    extra = await _active_user_ids(extra_ids)
+    found: list[str] = []
+    seen: set[str] = set()
+    for uid in extra + parsed:
+        if uid in seen:
+            continue
+        seen.add(uid)
+        found.append(uid)
+    return found
+
+
+async def _fanout_comment(
+    user: dict,
+    *,
+    audience: list,
+    number: str,
+    text: str,
+    entity_type: str,
+    entity_id: str,
+    activity_id: str,
+    mention_ids: list,
+) -> None:
+    mentioned = set(mention_ids)
+    others = [uid for uid in audience if uid not in mentioned]
+    await _inbox(
+        user, others,
+        source=entity_type, ntype="comment",
+        title=f"Comment on {number}",
+        body=text,
+        entity_type=entity_type, entity_id=entity_id,
+    )
+    await _inbox(
+        user, mention_ids,
+        source=entity_type, ntype="mention",
+        title=f"Mentioned on {number}",
+        body=text,
+        entity_type=entity_type, entity_id=entity_id,
+        activity_id=activity_id,
+        repeat_until_read=True,
+    )
+
+
+async def _with_mention_state(rows: list) -> list:
+    mention_ids: list[str] = []
+    activity_ids: list[str] = []
+    for row in rows:
+        if row.get("action") != "comment":
+            row.setdefault("mentions", [])
+            row.setdefault("seen_by", [])
+            continue
+        mention_ids.extend(row.get("mention_ids") or [])
+        if row.get("id"):
+            activity_ids.append(row["id"])
+    umap = await _user_map(mention_ids)
+    notes = []
+    if activity_ids:
+        notes = await db.notifications.find(
+            {"activity_id": {"$in": activity_ids}, "type": "mention"},
+            {"_id": 0, "activity_id": 1, "user_id": 1, "read": 1, "read_at": 1},
+        ).to_list(1000)
+    by_activity: dict[str, list] = {}
+    for note in notes:
+        by_activity.setdefault(note.get("activity_id") or "", []).append(note)
+    for row in rows:
+        if row.get("action") != "comment":
+            continue
+        ids = row.get("mention_ids") or []
+        row["mentions"] = [
+            {"id": uid, "name": (umap.get(uid) or {}).get("name") or ""}
+            for uid in ids
+        ]
+        seen = []
+        for note in by_activity.get(row.get("id") or "", []):
+            if not note.get("read"):
+                continue
+            uid = note.get("user_id")
+            seen.append({
+                "id": uid,
+                "name": (umap.get(uid) or {}).get("name") or "",
+                "read_at": note.get("read_at"),
+            })
+        row["seen_by"] = seen
+    return rows
 
 
 def _task_notice(diff: dict, number: str) -> tuple[str, str] | None:
@@ -330,6 +524,7 @@ class TaskPatch(BaseModel):
 
 class CommentIn(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
+    mention_ids: Optional[List[str]] = None
 
 
 class ObserversIn(BaseModel):
@@ -1123,16 +1318,21 @@ async def project_comment(
     project = await db.projects.find_one({"id": project_id}, {"_id": 0})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    text = body.body.strip()
+    mentions = await _collect_mentions(text, body.mention_ids)
     row = await _work_activity(
         user, "project", project_id, "comment", "Comment added",
-        comment=body.body.strip(),
+        comment=text, mention_ids=mentions,
     )
-    await _inbox(
-        user, _project_audience(project),
-        source="project", ntype="comment",
-        title=f"Comment on {project.get('number')}",
-        body=body.body.strip(),
-        entity_type="project", entity_id=project_id,
+    await _fanout_comment(
+        user,
+        audience=_project_audience(project),
+        number=project.get("number") or "",
+        text=text,
+        entity_type="project",
+        entity_id=project_id,
+        activity_id=row["id"],
+        mention_ids=mentions,
     )
     return row
 
@@ -1148,16 +1348,21 @@ async def task_comment(
         raise HTTPException(status_code=404, detail="Task not found")
     if not _freelancer_can_access_task(task, user):
         raise HTTPException(status_code=403, detail="Not allowed to comment on this task")
+    text = body.body.strip()
+    mentions = await _collect_mentions(text, body.mention_ids)
     row = await _work_activity(
         user, "task", task_id, "comment", "Comment added",
-        comment=body.body.strip(),
+        comment=text, mention_ids=mentions,
     )
-    await _inbox(
-        user, _task_audience(task),
-        source="task", ntype="comment",
-        title=f"Comment on {task.get('number')}",
-        body=body.body.strip(),
-        entity_type="task", entity_id=task_id,
+    await _fanout_comment(
+        user,
+        audience=_task_audience(task),
+        number=task.get("number") or "",
+        text=text,
+        entity_type="task",
+        entity_id=task_id,
+        activity_id=row["id"],
+        mention_ids=mentions,
     )
     return row
 
@@ -1175,7 +1380,7 @@ async def list_activity(
     if entity_id:
         filt["entity_id"] = entity_id
     rows = await db.work_activity.find(filt, {"_id": 0}).sort("ts", -1).to_list(limit)
-    return rows
+    return await _with_mention_state(rows)
 
 
 # ---------- Dashboard / report ----------

@@ -2,6 +2,7 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { Toaster } from "./components/ui/sonner";
+import PwaChrome from "./components/PwaChrome";
 import ErrorBoundary from "./components/ErrorBoundary";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -46,8 +47,8 @@ function PasswordChangeGate() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC] p-6" data-testid="password-change-gate">
-      <div className="w-full max-w-sm bg-white border border-slate-200 rounded-xl p-8 shadow-sm">
+    <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC] p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]" data-testid="password-change-gate">
+      <div className="w-full max-w-sm bg-white border border-slate-200 rounded-xl p-5 md:p-8 shadow-sm">
         <ChangePasswordForm onSubmit={handle} />
       </div>
     </div>
@@ -113,6 +114,7 @@ export default function App() {
           </Routes>
         </ErrorBoundary>
       </BrowserRouter>
+      <PwaChrome />
       <Toaster position="top-right" richColors />
     </AuthProvider>
   );

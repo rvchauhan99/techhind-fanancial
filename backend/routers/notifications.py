@@ -2,11 +2,17 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from core import ALL_ROLES, db, iso_now, require_roles
 from notifications import public_notification
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
+
+
+class SeenIn(BaseModel):
+    entity_type: str = Field(min_length=1, max_length=32)
+    entity_id: str = Field(min_length=1, max_length=80)
 
 
 @router.get("")
@@ -25,7 +31,33 @@ async def list_notifications(
 @router.get("/unread-count")
 async def unread_count(user=Depends(require_roles(*ALL_ROLES))):
     n = await db.notifications.count_documents({"user_id": user["id"], "read": False})
-    return {"count": n}
+    mention = await db.notifications.find_one(
+        {"user_id": user["id"], "read": False, "type": "mention"},
+        {"_id": 0},
+        sort=[("ts", -1)],
+    )
+    return {
+        "count": n,
+        "mention": public_notification(mention) if mention else None,
+    }
+
+
+@router.post("/seen")
+async def mark_seen(body: SeenIn, user=Depends(require_roles(*ALL_ROLES))):
+    if body.entity_type not in ("task", "project"):
+        raise HTTPException(status_code=400, detail="Invalid entity")
+    now = iso_now()
+    res = await db.notifications.update_many(
+        {
+            "user_id": user["id"],
+            "read": False,
+            "type": "mention",
+            "entity_type": body.entity_type,
+            "entity_id": body.entity_id,
+        },
+        {"$set": {"read": True, "read_at": now, "repeat_until_read": False}},
+    )
+    return {"updated": res.modified_count}
 
 
 @router.post("/read-all")
@@ -33,7 +65,7 @@ async def read_all(user=Depends(require_roles(*ALL_ROLES))):
     now = iso_now()
     res = await db.notifications.update_many(
         {"user_id": user["id"], "read": False},
-        {"$set": {"read": True, "read_at": now}},
+        {"$set": {"read": True, "read_at": now, "repeat_until_read": False}},
     )
     return {"updated": res.modified_count}
 
@@ -43,7 +75,7 @@ async def mark_read(nid: str, user=Depends(require_roles(*ALL_ROLES))):
     now = iso_now()
     res = await db.notifications.update_one(
         {"id": nid, "user_id": user["id"], "read": False},
-        {"$set": {"read": True, "read_at": now}},
+        {"$set": {"read": True, "read_at": now, "repeat_until_read": False}},
     )
     if res.matched_count == 0:
         existing = await db.notifications.find_one(

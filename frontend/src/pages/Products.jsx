@@ -71,7 +71,7 @@ export default function Products() {
       <FilterBar schema={SCHEMA} values={values} setFilter={setFilter}
         clearFilters={clearFilters} activeCount={activeCount} testId="product-filters" />
       <div className="bg-white border border-slate-200 rounded-lg">
-        <table className="w-full text-sm" data-testid="products-table">
+        <table className="w-full text-sm pwa-table" data-testid="products-table">
           <thead><tr className="bg-slate-100 text-slate-700 text-[11px] uppercase tracking-wider">
             <th className="text-left px-3 py-2">Name</th><th className="text-left px-3 py-2">Type</th>
             <th className="text-left px-3 py-2">HSN/SAC</th><th className="text-left px-3 py-2">Cycle</th>
@@ -109,7 +109,7 @@ export default function Products() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-xl bg-white" data-testid="product-dialog">
           <DialogHeader><DialogTitle className="font-heading">{editing ? "Edit Product" : "New Product"}</DialogTitle></DialogHeader>
-          <form onSubmit={submit} className="grid grid-cols-2 gap-3">
+          <form onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="col-span-2"><Label>Name *</Label>
               <Input data-testid="product-name-input" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
             <div><Label>Type</Label>
