@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import api, { apiError } from "../lib/api"
 import { fmtDateTime } from "../lib/format"
 import Layout, { Empty, StatusBadge } from "../components/Layout"
+import { PriorityBadge } from "../components/tickets/TicketAttachmentViewer"
 import { useAuth } from "../context/AuthContext"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
@@ -233,23 +234,35 @@ export default function Tickets() {
                 onClick={() => navigate(`/tickets/${t.id}`)}
                 data-testid={`ticket-row-${t.id}`}
               >
-                <td className="px-2 py-1 font-mono text-xs text-[#0066CC]">
+                <td className="px-2 py-1 font-mono text-xs text-[#0066CC]" data-label="Number">
                   <Link to={`/tickets/${t.id}`} onClick={(e) => e.stopPropagation()}>
                     {t.number}
                   </Link>
                 </td>
-                <td className="px-2 py-1 font-medium text-xs max-w-[180px] truncate">{t.subject}</td>
-                <td className="px-2 py-1 text-xs max-w-[120px] truncate">{t.customer_name}</td>
-                <td className="px-2 py-1 text-xs capitalize">{t.category || "—"}</td>
-                <td className="px-2 py-1 text-xs truncate max-w-[100px]">{t.assignee_name || "—"}</td>
-                <td className="px-2 py-1 text-xs capitalize">{t.priority}</td>
-                <td className="px-2 py-1">
+                <td className="px-2 py-1 font-medium text-xs max-w-[180px] truncate" data-label="Subject">
+                  {t.subject}
+                </td>
+                <td className="px-2 py-1 text-xs max-w-[120px] truncate" data-label="Customer">
+                  {t.customer_name}
+                </td>
+                <td className="px-2 py-1 text-xs capitalize" data-label="Category">
+                  {t.category || "—"}
+                </td>
+                <td className="px-2 py-1 text-xs truncate max-w-[100px]" data-label="Assignee">
+                  {t.assignee_name || "—"}
+                </td>
+                <td className="px-2 py-1" data-label="Priority">
+                  <PriorityBadge value={t.priority} />
+                </td>
+                <td className="px-2 py-1" data-label="SLA">
                   <SlaBadge ticket={t} />
                 </td>
-                <td className="px-2 py-1">
+                <td className="px-2 py-1" data-label="Status">
                   <StatusBadge value={t.status} />
                 </td>
-                <td className="px-2 py-1 font-mono text-[10px] text-slate-500">{fmtDateTime(t.updated_at)}</td>
+                <td className="px-2 py-1 font-mono text-[10px] text-slate-500" data-label="Updated">
+                  {fmtDateTime(t.updated_at)}
+                </td>
               </tr>
             ))}
           </tbody>
