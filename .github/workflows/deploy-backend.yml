@@ -22,8 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      # Same VPS as mealhq-api; override via repo Variables if needed
-      VULTR_HOST: ${{ vars.VULTR_HOST || '139.84.223.174' }}
+      # AIC Cloud dedicated IPv4. Variable name is historical; override via repo Variables if needed.
+      VULTR_HOST: ${{ vars.VULTR_HOST || '178.92.120.191' }}
       VULTR_USER: ${{ vars.VULTR_USER || 'root' }}
       VULTR_HEALTH_URL: ${{ vars.VULTR_HEALTH_URL || 'https://api.techhind.in/health' }}
       VULTR_READY_URL: ${{ vars.VULTR_READY_URL || 'https://api.techhind.in/ready' }}

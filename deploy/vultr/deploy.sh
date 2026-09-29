@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
-# Deploy TechHind Finance backend to Vultr (no Mongo — Atlas only).
-# Uses systemd uvicorn :8010 + shared Caddy (calling-crm) for TLS on 443.
+# Deploy TechHind Finance backend to the AIC Cloud VPS (no Mongo — Atlas only).
+# systemd uvicorn on 127.0.0.1:8010. Host Caddy terminates TLS for api.techhind.in.
 # Usage: ./deploy/vultr/deploy.sh [user@host]
 # Env: SKIP_ENV_SYNC=1  — never overwrite remote .env (used by GitHub Actions)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-REMOTE="${1:-${TECHHIND_SSH:-mealhq-vultr}}"
+REMOTE="${1:-${TECHHIND_SSH:-aic-finance}}"
 APP_ROOT="/opt/techhind-finance"
 BACKEND_REMOTE="${APP_ROOT}/backend"
-CADDYFILE_REMOTE="/opt/calling-crm/deploy/Caddyfile"
-MARKER="# techhind-finance-api.techhind.in"
 
 echo "==> Deploy target: ${REMOTE}"
 echo "==> Local repo: ${ROOT}"
@@ -49,10 +47,6 @@ apt-get install -y -qq python3-venv python3-pip \
   libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libffi-dev \
   shared-mime-info fonts-dejavu-core >/dev/null
 id www-data >/dev/null 2>&1 || useradd -r -s /usr/sbin/nologin www-data
-# Caddy (Docker) reaches host via host.docker.internal — UFW must allow 8010
-if command -v ufw >/dev/null 2>&1; then
-  ufw allow 8010/tcp comment techhind-finance-api || true
-fi
 EOF
 
 echo "==> venv + requirements"
@@ -75,23 +69,23 @@ echo "==> Ensure Caddy site for api.techhind.in"
 rsync -az "${ROOT}/deploy/vultr/caddy-api.techhind.in.conf" "${REMOTE}:/tmp/caddy-api.techhind.in.conf"
 ssh "${REMOTE}" bash -s <<EOF
 set -euo pipefail
-CF="${CADDYFILE_REMOTE}"
-if [[ ! -f "\$CF" ]]; then
-  echo "ERROR: missing \$CF — shared Caddy not found"
-  exit 1
-fi
-if grep -q "api.techhind.in" "\$CF"; then
-  echo "Caddy already has api.techhind.in"
-else
-  echo "" >> "\$CF"
-  echo "${MARKER}" >> "\$CF"
-  cat /tmp/caddy-api.techhind.in.conf >> "\$CF"
-  echo "Appended api.techhind.in to Caddyfile"
-fi
-cd /opt/calling-crm/deploy
-docker compose --profile tls up -d caddy 2>/dev/null || true
-docker compose --profile tls exec -T caddy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null \
-  || docker restart calling-crm-caddy-1
+python3 - <<'PY'
+from pathlib import Path
+caddyfile = Path("/etc/caddy/Caddyfile")
+snippet = Path("/tmp/caddy-api.techhind.in.conf").read_text().strip() + "\n"
+text = caddyfile.read_text() if caddyfile.exists() else ""
+if "auto_https disable_redirects" not in text:
+    text = "{\n\tauto_https disable_redirects\n}\n\n" + text
+if "api.techhind.in" not in text:
+    if text and not text.endswith("\n"):
+        text += "\n"
+    text += "\n" + snippet
+    print("Appended api.techhind.in")
+else:
+    print("Caddy already has api.techhind.in")
+caddyfile.write_text(text)
+PY
+systemctl reload caddy
 sleep 2
 systemctl --no-pager status techhind-finance.service | head -15
 curl -sS -o /dev/null -w "local_health=%{http_code}\n" http://127.0.0.1:8010/health || true
@@ -100,6 +94,6 @@ echo
 EOF
 
 echo "==> Done."
-echo "    DNS: api.techhind.in A → server IP (or Cloudflare proxied)"
-echo "    Atlas: allowlist Vultr IP"
+echo "    DNS: api.techhind.in A → 178.92.120.191"
+echo "    Atlas: allowlist 178.92.120.191/32"
 echo "    Vercel: REACT_APP_BACKEND_URL=https://api.techhind.in"
