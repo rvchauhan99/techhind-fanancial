@@ -28,6 +28,7 @@ export default function TaskDetail() {
   const [users, setUsers] = useState([])
   const [checkText, setCheckText] = useState("")
   const [descEdit, setDescEdit] = useState("")
+  const [titleBaseline, setTitleBaseline] = useState("")
   const [reminderLocal, setReminderLocal] = useState("")
   const [uploading, setUploading] = useState(false)
 
@@ -35,6 +36,7 @@ export default function TaskDetail() {
     api.get(`/work/tasks/${id}`).then((r) => {
       setTask(r.data)
       setDescEdit(r.data.description || "")
+      setTitleBaseline(r.data.title || "")
       setReminderLocal(r.data.reminder_at ? r.data.reminder_at.slice(0, 16) : "")
     }).catch(() => setTask(null))
   }
@@ -49,10 +51,19 @@ export default function TaskDetail() {
     try {
       const { data } = await api.patch(`/work/tasks/${id}`, body)
       setTask(data)
+      if (Object.prototype.hasOwnProperty.call(body, "title")) {
+        setTitleBaseline(data.title || "")
+      }
       toast.success("Task updated")
     } catch (e) {
       toast.error(apiError(e))
     }
+  }
+
+  const handleTitleBlur = () => {
+    const next = task?.title || ""
+    if (next === titleBaseline) return
+    patch({ title: next })
   }
 
   const handleStart = async () => {
@@ -206,7 +217,7 @@ export default function TaskDetail() {
                 data-testid="task-title-edit"
                 value={task.title}
                 onChange={(e) => setTask({ ...task, title: e.target.value })}
-                onBlur={() => patch({ title: task.title })}
+                onBlur={handleTitleBlur}
               />
             ) : (
               <h2 className="font-heading text-lg font-bold text-slate-900 mt-0.5">{task.title}</h2>

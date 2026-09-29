@@ -1055,16 +1055,20 @@ async def patch_task(
     await db.tasks.update_one({"id": task_id}, {"$set": patch})
     after = {**existing, **patch}
     diff = field_diff(existing, after, TASK_FIELDS)
+    if not diff:
+        return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
+    number = existing.get("number") or ""
     action = "task_updated"
     if "status" in diff:
         action = "status_changed"
     elif "assignee_id" in diff:
         action = "assignee_changed"
+    notice = _task_notice(diff, number)
+    summary = notice[1] if notice else f"Updated {number}"
     await _work_activity(
         user, "task", task_id, action,
-        f"Updated {existing.get('number')}", diff=diff,
+        summary, diff=diff,
     )
-    notice = _task_notice(diff, existing.get("number") or "")
     if notice:
         ntype, title = notice
         await _inbox(
