@@ -40,7 +40,7 @@ Task/project chat mentions: `work-activity-panel`, `work-comment-input`, `work-m
 
 Phone shell: `mobile-menu-btn`, `mobile-tabbar`, `tab-home`, `tab-tickets`, `tab-invoices`, `tab-tasks`, `tab-more`, `mobile-drawer`, `mobile-nav`, `mobile-action-bar`, `filter-more-btn`, `offline-banner`, `pwa-update-banner`, `pwa-update-reload`.
 
-File dropzone (tasks Files card + ticket reply): `task-file-dropzone`, `task-file-input`, `ticket-reply-dropzone`, `ticket-reply-files`, `file-chip-list`, `file-chip-remove-{n}`. Native click/drop/paste; png/jpeg/webp/pdf/csv/xls/xlsx; 5 MB each. Tasks cap 10 (immediate upload). Tickets cap 5 per message (queued chips, then send). File-only ticket reply stores body `(attachment)`.
+File dropzone (tasks Files card + ticket reply): `task-file-dropzone`, `task-file-input`, `ticket-reply-dropzone`, `ticket-reply-files`, `file-chip-list`, `file-chip-remove-{n}`. Native click/drop/paste; png/jpeg/webp/pdf/csv/xls/xlsx/md/markdown; 5 MB each. `.md` is stored as `text/markdown` even when the browser sends `text/plain` or `application/octet-stream`. Tasks cap 10 (immediate upload). Tickets cap 5 per message (queued chips, then send). File-only ticket reply stores body `(attachment)`. Company logo/stamp/signature stay image-only. Expense voucher attachments stay unrestricted.
 
 ## List filters (FilterBar)
 

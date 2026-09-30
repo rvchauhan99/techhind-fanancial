@@ -10,9 +10,11 @@ export const ALLOWED_UPLOAD_MIME = [
   "text/csv",
   "application/vnd.ms-excel",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/markdown",
+  "text/x-markdown",
 ]
 
-export const UPLOAD_ACCEPT = ALLOWED_UPLOAD_MIME.join(",")
+export const UPLOAD_ACCEPT = [...ALLOWED_UPLOAD_MIME, ".md", ".markdown"].join(",")
 
 const EXT_MIME = {
   png: "image/png",
@@ -23,12 +25,19 @@ const EXT_MIME = {
   csv: "text/csv",
   xls: "application/vnd.ms-excel",
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  md: "text/markdown",
+  markdown: "text/markdown",
 }
+
+const GENERIC_DECLARED_MIME = ["", "text/plain", "application/octet-stream", "text/x-markdown"]
 
 export const mimeOf = (file) => {
   const declared = String(file?.type || "").split(";")[0].trim().toLowerCase()
-  if (declared) return declared
   const ext = String(file?.name || "").split(".").pop()?.toLowerCase() || ""
+  if ((ext === "md" || ext === "markdown") && GENERIC_DECLARED_MIME.includes(declared)) {
+    return "text/markdown"
+  }
+  if (declared) return declared
   return EXT_MIME[ext] || ""
 }
 

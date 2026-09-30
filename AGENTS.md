@@ -2,7 +2,7 @@
 
 **TechHind Company Finance (TCF)** — standalone single-company GST finance app (INR, FY Apr–Mar, series `TH/{FY}/{SEQ}`).
 
-**Last synced:** 2026-09-29 — Support tickets pro UI: chat bubbles, priority badges, authenticated image thumbs + fullscreen lightbox on Finance Ticket Detail and Solar `/support-tickets`. Prior: Task/project chat `@` mentions any active user (`mention_ids` + name parse); tagged user gets an inbox row. Prior: Task Files and ticket reply dropzone. Installable mobile PWA. Shared notification inbox (header bell).
+**Last synced:** 2026-09-30 — Task and ticket attachments accept `.md` / `.markdown` (`text/markdown`), including browsers that send `text/plain` or `application/octet-stream`. Logo, stamp, and signature stay image-only. Prior: Support tickets pro UI (chat bubbles, priority badges, image thumbs + lightbox).
 
 ## Not Solar CRM
 

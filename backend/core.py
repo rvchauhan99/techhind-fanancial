@@ -232,13 +232,25 @@ ALLOWED_UPLOAD_MIME = {
     "image/png", "image/jpeg", "image/webp", "application/pdf",
     "text/csv", "application/vnd.ms-excel",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/markdown", "text/x-markdown",
 }
+_MARKDOWN_EXTS = {".md", ".markdown"}
+_GENERIC_UPLOAD_MIME = {"", "application/octet-stream", "text/plain", "text/x-markdown"}
+
+
+def _upload_ext(filename: str) -> str:
+    name = (filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+    if "." not in name:
+        return ""
+    return "." + name.rsplit(".", 1)[-1].lower()
 
 
 def validate_upload(content: bytes, content_type: str | None, filename: str = ""):
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail=f"File too large (max {MAX_UPLOAD_BYTES} bytes)")
     ctype = (content_type or "application/octet-stream").split(";")[0].strip().lower()
+    if _upload_ext(filename) in _MARKDOWN_EXTS and ctype in _GENERIC_UPLOAD_MIME:
+        ctype = "text/markdown"
     if ctype and ctype not in ALLOWED_UPLOAD_MIME:
         raise HTTPException(status_code=400, detail=f"MIME type not allowed: {ctype}")
     return ctype

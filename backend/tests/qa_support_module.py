@@ -453,6 +453,28 @@ def main():
     )
     check("SUP-17b", st_empty == 400, f"st={st_empty}")
 
+    # SUP-18 markdown reply: browsers often send application/octet-stream for .md
+    raw_md, ctype_md = multipart(
+        {"body": "markdown note", "visibility": "public"},
+        [("files", "notes.md", b"# ticket note\n", "application/octet-stream")],
+    )
+    st_md, msg_md, _ = req(
+        "POST",
+        f"/api/tickets/{tid}/messages",
+        cookie=admin,
+        raw=raw_md,
+        ctype=ctype_md,
+    )
+    md_att = next(
+        (a for a in ((msg_md or {}).get("attachments") or []) if str(a.get("name") or "").endswith(".md")),
+        None,
+    )
+    check(
+        "SUP-18",
+        st_md == 200 and (md_att or {}).get("mime") == "text/markdown",
+        f"st={st_md} mime={(md_att or {}).get('mime')}",
+    )
+
     # SUP-15 public reply emails requester (mock ok)
     # Ensure requester_email set; reply should not 500
     req("PATCH", f"/api/tickets/{tid}", {"status": "open"}, cookie=admin)

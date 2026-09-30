@@ -21,7 +21,7 @@ const fileIcon = (att) => {
   const name = String(att?.name || "").toLowerCase()
   const mime = String(att?.mime || "")
   if (mime.includes("sheet") || /\.(xlsx?|csv)$/.test(name)) return FileSpreadsheet
-  if (isPdfAttachment(att) || mime.includes("pdf") || mime.includes("text")) return FileText
+  if (isPdfAttachment(att) || mime.includes("pdf") || mime.includes("text") || /\.(md|markdown)$/.test(name)) return FileText
   return File
 }
 

@@ -147,6 +147,28 @@ def main():
     st, att2, _ = req("DELETE", f"/api/work/tasks/{tid}/attachments/{fid}", cookie=admin)
     check("TSK-06b", st == 200 and fid not in (att2.get("attachment_ids") or []), f"st={st}")
 
+    # TSK-06c markdown: browsers often send text/plain for .md
+    body, ctype = multipart_file("file", "notes.md", b"# QA note\n", "text/plain")
+    st, md_att, _ = req("POST", f"/api/work/tasks/{tid}/attachments", cookie=admin, raw=body, ctype=ctype)
+    md_rows = [a for a in (md_att.get("attachments") or []) if str(a.get("original_filename") or "").endswith(".md")]
+    md_row = md_rows[0] if md_rows else {}
+    check(
+        "TSK-06c",
+        st == 200 and md_row.get("content_type") == "text/markdown",
+        f"st={st} ctype={md_row.get('content_type')}",
+    )
+    md_fid = md_row.get("id")
+    if md_fid:
+        st, md_del, _ = req("DELETE", f"/api/work/tasks/{tid}/attachments/{md_fid}", cookie=admin)
+        check("TSK-06d", st == 200 and md_fid not in (md_del.get("attachment_ids") or []), f"st={st}")
+    else:
+        check("TSK-06d", False, "no markdown attachment id")
+
+    body, ctype = multipart_file("file", "notes.md", b"# not a logo\n", "text/plain")
+    st, logo, _ = req("POST", "/api/settings/company/assets/logo", cookie=admin, raw=body, ctype=ctype)
+    detail = str((logo or {}).get("detail") or "") if isinstance(logo, dict) else ""
+    check("SET-MD", st == 400 and "webp" in detail.lower(), f"st={st} {detail}")
+
     # TSK-07 reminder
     rem = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
     st, rset, _ = req("POST", f"/api/work/tasks/{tid}/reminders", {"reminder_at": rem}, cookie=admin)
