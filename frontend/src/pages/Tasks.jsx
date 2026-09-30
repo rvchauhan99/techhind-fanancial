@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { Plus, LayoutList, Columns3, CalendarClock } from "lucide-react"
 import { toast } from "sonner"
 import api, { apiError } from "../lib/api"
-import { fmtDate } from "../lib/format"
+import { fmtDate, TASK_KANBAN, TASK_STATUSES, taskStatusLabel } from "../lib/format"
 import Layout, { Empty, StatusBadge } from "../components/Layout"
 import { useAuth } from "../context/AuthContext"
 import { Button } from "../components/ui/button"
@@ -15,8 +15,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import FilterBar, { FIELD } from "../components/filters/FilterBar"
 import { useListFilters } from "../hooks/useListFilters"
 
-const STATUSES = ["backlog", "todo", "in_progress", "in_review", "blocked", "done", "cancelled"]
-const KANBAN = ["backlog", "todo", "in_progress", "in_review", "blocked", "done"]
 const TYPES = [
   "development", "uat", "testing", "customer_demo", "documentation",
   "training", "support_ops", "other",
@@ -30,6 +28,7 @@ const emptyForm = (userId) => ({
   task_type: "development",
   project_id: "",
   assignee_id: userId || "",
+  ba_id: "",
   observer_ids: [],
   due_date: "",
   reminder_at: "",
@@ -39,7 +38,7 @@ const emptyForm = (userId) => ({
 const BASE_SCHEMA = [
   { key: "q", type: FIELD.TEXT, label: "Search", placeholder: "Title…", width: "w-36" },
   { key: "status", type: FIELD.SELECT, label: "Status", width: "w-32",
-    options: STATUSES.map((s) => ({ value: s, label: s })) },
+    options: TASK_STATUSES.map((s) => ({ value: s, label: taskStatusLabel(s) })) },
   { key: "task_type", type: FIELD.SELECT, label: "Type", width: "w-36",
     options: TYPES.map((t) => ({ value: t, label: t })) },
   { key: "mine", type: FIELD.TOGGLE, label: "Mine", placeholder: "Assigned to me" },
@@ -134,6 +133,7 @@ export default function Tasks() {
         task_type: form.task_type,
         project_id: form.project_id || null,
         assignee_id: form.assignee_id || null,
+        ba_id: form.ba_id || null,
         observer_ids: form.observer_ids || [],
         due_date: form.due_date || null,
         reminder_at: form.reminder_at ? new Date(form.reminder_at).toISOString() : null,
@@ -150,11 +150,22 @@ export default function Tasks() {
 
   const moveStatus = async (taskId, newStatus) => {
     try {
-      await api.patch(`/work/tasks/${taskId}`, { status: newStatus })
+      if (newStatus === "testing_rejected") {
+        const reason = window.prompt("Rejection reason")
+        if (!reason || !reason.trim()) {
+          toast.error("Rejection reason is required")
+          load()
+          return
+        }
+        await api.post(`/work/tasks/${taskId}/reject-testing`, { reason: reason.trim() })
+      } else {
+        await api.patch(`/work/tasks/${taskId}`, { status: newStatus })
+      }
       toast.success("Status updated")
       load()
     } catch (err) {
       toast.error(apiError(err))
+      load()
     }
   }
 
@@ -221,6 +232,7 @@ export default function Tasks() {
                 <th className="text-left px-3 py-2">Type</th>
                 <th className="text-left px-3 py-2">Project</th>
                 <th className="text-left px-3 py-2">Assignee</th>
+                <th className="text-left px-3 py-2">BA</th>
                 <th className="text-left px-3 py-2">Status</th>
                 <th className="text-left px-3 py-2">Due</th>
               </tr>
@@ -238,6 +250,7 @@ export default function Tasks() {
                     <td className="px-3 py-2 text-xs capitalize">{t.task_type || t.category}</td>
                     <td className="px-3 py-2 text-xs text-slate-600">{t.project?.name || "—"}</td>
                     <td className="px-3 py-2 text-xs">{t.assignee?.name || "—"}</td>
+                    <td className="px-3 py-2 text-xs">{t.ba?.name || "—"}</td>
                     <td className="px-3 py-2"><StatusBadge value={t.status} /></td>
                     <td className={`px-3 py-2 font-mono text-[11px] ${overdue ? "text-red-600 font-semibold" : "text-slate-500"}`}>
                       {fmtDate(t.due_date)}
@@ -253,10 +266,10 @@ export default function Tasks() {
 
       {view === "kanban" && (
         <div className="flex gap-2 overflow-x-auto pb-2 snap-x snap-mandatory" data-testid="tasks-kanban">
-          {(board?.columns || KANBAN.map((s) => ({ status: s, tasks: [] }))).map((col) => (
+          {(board?.columns || TASK_KANBAN.map((s) => ({ status: s, tasks: [] }))).map((col) => (
             <div key={col.status} className="w-56 shrink-0 snap-start bg-slate-50 border border-slate-200 rounded-lg" data-testid={`kanban-${col.status}`}>
               <div className="px-2.5 py-2 border-b border-slate-200 flex items-center justify-between">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">{col.status}</span>
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">{taskStatusLabel(col.status)}</span>
                 <span className="font-mono text-xs text-slate-500">{(col.tasks || []).length}</span>
               </div>
               <div className="p-1.5 space-y-1.5 max-h-[70vh] overflow-y-auto">
@@ -270,7 +283,7 @@ export default function Tasks() {
                     <div className="text-xs font-medium text-slate-800 leading-snug mt-0.5">{t.title}</div>
                     <div className="mt-1.5 flex items-center justify-between gap-1">
                       <span className="text-[10px] capitalize text-slate-500">{t.task_type}</span>
-                      <span className="text-[10px] text-slate-500 truncate">{t.assignee?.name || "—"}</span>
+                      <span className="text-[10px] text-slate-500 truncate">{t.ba?.name || t.assignee?.name || "—"}</span>
                     </div>
                     {canCap("can_work_write") && (
                       <select
@@ -280,7 +293,7 @@ export default function Tasks() {
                         onChange={(e) => moveStatus(t.id, e.target.value)}
                         data-testid={`kanban-move-${t.id}`}
                       >
-                        {KANBAN.map((s) => <option key={s} value={s}>{s}</option>)}
+                        {TASK_KANBAN.map((s) => <option key={s} value={s}>{taskStatusLabel(s)}</option>)}
                       </select>
                     )}
                   </div>
@@ -375,6 +388,14 @@ export default function Tasks() {
             <div><Label>Assignee</Label>
               <Select value={form.assignee_id || "_none"} onValueChange={(v) => setForm({ ...form, assignee_id: v === "_none" ? "" : v })}>
                 <SelectTrigger className="h-9" data-testid="task-assignee-select"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">Unassigned</SelectItem>
+                  {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name} ({u.role})</SelectItem>)}
+                </SelectContent>
+              </Select></div>
+            <div><Label>BA</Label>
+              <Select value={form.ba_id || "_none"} onValueChange={(v) => setForm({ ...form, ba_id: v === "_none" ? "" : v })}>
+                <SelectTrigger className="h-9" data-testid="task-ba-select"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="_none">Unassigned</SelectItem>
                   {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name} ({u.role})</SelectItem>)}

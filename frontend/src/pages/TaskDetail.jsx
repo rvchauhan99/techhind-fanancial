@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom"
 import { ArrowLeft, Paperclip, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import api, { apiError, API } from "../lib/api"
-import { fmtDate, fmtDateTime } from "../lib/format"
+import { fmtDate, fmtDateTime, TASK_STATUSES, taskStatusLabel } from "../lib/format"
 import { MAX_TASK_ATTACHMENTS } from "../lib/uploadLimits"
 import Layout, { StatusBadge } from "../components/Layout"
 import WorkActivity from "../components/WorkActivity"
@@ -14,7 +14,6 @@ import { Input } from "../components/ui/input"
 import { Button } from "../components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select"
 
-const STATUSES = ["backlog", "todo", "in_progress", "in_review", "blocked", "done", "cancelled"]
 const TYPES = [
   "development", "uat", "testing", "customer_demo", "documentation",
   "training", "support_ops", "other",
@@ -23,7 +22,7 @@ const TYPES = [
 export default function TaskDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { canCap } = useAuth()
+  const { canCap, user } = useAuth()
   const [task, setTask] = useState(null)
   const [users, setUsers] = useState([])
   const [checkText, setCheckText] = useState("")
@@ -31,6 +30,7 @@ export default function TaskDetail() {
   const [titleBaseline, setTitleBaseline] = useState("")
   const [reminderLocal, setReminderLocal] = useState("")
   const [uploading, setUploading] = useState(false)
+  const [rejectReason, setRejectReason] = useState("")
 
   const load = () => {
     api.get(`/work/tasks/${id}`).then((r) => {
@@ -81,6 +81,32 @@ export default function TaskDetail() {
       const { data } = await api.post(`/work/tasks/${id}/complete`)
       setTask(data)
       toast.success("Task completed")
+    } catch (e) {
+      toast.error(apiError(e))
+    }
+  }
+
+  const handleReject = async () => {
+    const reason = rejectReason.trim()
+    if (!reason) {
+      toast.error("Rejection reason is required")
+      return
+    }
+    try {
+      const { data } = await api.post(`/work/tasks/${id}/reject-testing`, { reason })
+      setTask(data)
+      setRejectReason("")
+      toast.success("Testing rejected")
+    } catch (e) {
+      toast.error(apiError(e))
+    }
+  }
+
+  const handleReady = async () => {
+    try {
+      const { data } = await api.post(`/work/tasks/${id}/ready-to-live`)
+      setTask(data)
+      toast.success("Marked ready to live")
     } catch (e) {
       toast.error(apiError(e))
     }
@@ -183,6 +209,7 @@ export default function TaskDetail() {
   }
 
   const write = canCap("can_work_write")
+  const canSignOff = canCap("can_work_manage") || ["qa", "business_analyst"].includes(user?.role)
   const overdue = task.due_date && !["done", "cancelled"].includes(task.status)
     && task.due_date < new Date().toISOString().slice(0, 10)
 
@@ -194,6 +221,16 @@ export default function TaskDetail() {
           {write && task.status !== "in_progress" && task.status !== "done" && (
             <Button size="sm" data-testid="task-start-btn" onClick={handleStart}
               className="h-8 bg-[#0066CC] hover:bg-[#0055aa] text-white">Start</Button>
+          )}
+          {canSignOff && !["done", "cancelled", "testing_rejected"].includes(task.status) && (
+            <Button size="sm" data-testid="task-reject-btn" variant="outline" onClick={handleReject} className="h-8">
+              Reject testing
+            </Button>
+          )}
+          {canSignOff && !["done", "cancelled", "ready_to_live"].includes(task.status) && (
+            <Button size="sm" data-testid="task-ready-btn" variant="outline" onClick={handleReady} className="h-8">
+              Ready to live
+            </Button>
           )}
           {write && task.status !== "done" && (
             <Button size="sm" data-testid="task-complete-btn" variant="outline" onClick={handleComplete} className="h-8">
@@ -230,6 +267,19 @@ export default function TaskDetail() {
                 </Link>
               </div>
             )}
+            {task.rejection_reason && (
+              <div className="mt-2 text-xs font-medium text-red-700" data-testid="task-rejection-reason">
+                Testing rejected: {task.rejection_reason}
+              </div>
+            )}
+            {canSignOff && !["done", "cancelled", "testing_rejected"].includes(task.status) && (
+              <div className="mt-2">
+                <Label className="text-[10px]">Rejection reason</Label>
+                <Input className="h-8 text-xs mt-1" data-testid="task-reject-reason" value={rejectReason}
+                  placeholder="Why testing failed"
+                  onChange={(e) => setRejectReason(e.target.value)} />
+              </div>
+            )}
             {overdue && (
               <div className="mt-2 text-xs font-semibold text-red-600" data-testid="task-overdue-badge">
                 Overdue · due {fmtDate(task.due_date)}
@@ -262,9 +312,15 @@ export default function TaskDetail() {
               <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-2">
                 <div>
                   <Label className="text-[10px]">Status</Label>
-                  <Select value={task.status} onValueChange={(v) => patch({ status: v })}>
+                  <Select value={task.status} onValueChange={(v) => {
+                    if (v === "testing_rejected") {
+                      handleReject()
+                      return
+                    }
+                    patch({ status: v })
+                  }}>
                     <SelectTrigger className="h-8 text-xs" data-testid="task-status"><SelectValue /></SelectTrigger>
-                    <SelectContent>{STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                    <SelectContent>{TASK_STATUSES.map((s) => <SelectItem key={s} value={s}>{taskStatusLabel(s)}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div>
@@ -295,6 +351,19 @@ export default function TaskDetail() {
                   </Select>
                 </div>
                 <div>
+                  <Label className="text-[10px]">BA</Label>
+                  <Select
+                    value={task.ba_id || "_none"}
+                    onValueChange={(v) => patch({ ba_id: v === "_none" ? null : v })}
+                  >
+                    <SelectTrigger className="h-8 text-xs" data-testid="task-ba-edit"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">Unassigned</SelectItem>
+                      {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
                   <Label className="text-[10px]">Due date</Label>
                   <Input type="date" className="h-8 text-xs" data-testid="task-due-edit"
                     value={task.due_date || ""} onChange={(e) => patch({ due_date: e.target.value || null })} />
@@ -314,6 +383,7 @@ export default function TaskDetail() {
                 <span className="capitalize">{task.task_type}</span>
                 <span className="uppercase text-slate-500">{task.priority}</span>
                 <span>{task.assignee?.name || "Unassigned"}</span>
+                <span>BA: {task.ba?.name || "—"}</span>
                 <span className="font-mono">{fmtDate(task.due_date)}</span>
               </div>
             )}

@@ -65,6 +65,11 @@ _LEGACY_CAPS = {
         can_work_write=True, can_work_manage=False, can_rbac_admin=False,
         can_ticket_write=True,
     ),
+    "business_analyst": dict(
+        can_finance_write=False, can_finance_admin=False, can_finance_audit=False,
+        can_work_write=True, can_work_manage=False, can_rbac_admin=False,
+        can_ticket_write=False,
+    ),
 }
 
 _logger = logging.getLogger("core")

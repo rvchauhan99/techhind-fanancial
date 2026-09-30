@@ -214,6 +214,39 @@ def main():
     except RuntimeError as e:
         check("TSK-10", False, str(e))
 
+    # TSK-11..13 BA / QA sign-off gates
+    st, gate, _ = req("POST", "/api/work/tasks", {"title": "Sign-off gate", "status": "in_review"}, cookie=admin)
+    gid = (gate or {}).get("id")
+    check("TSK-11pre", st == 200 and gid, f"st={st}")
+    st, rejected, _ = req("PATCH", f"/api/work/tasks/{gid}", {"status": "testing_rejected"}, cookie=admin)
+    check("TSK-11a", st == 400, f"st={st} {rejected}")
+    st, blank, _ = req("POST", f"/api/work/tasks/{gid}/reject-testing", {"reason": " "}, cookie=admin)
+    check("TSK-11b", st == 400, f"st={st} {blank}")
+    st, rej, _ = req(
+        "POST", f"/api/work/tasks/{gid}/reject-testing",
+        {"reason": "Steps fail on staging"}, cookie=admin,
+    )
+    check(
+        "TSK-11c",
+        st == 200 and rej.get("status") == "testing_rejected" and rej.get("rejection_reason") == "Steps fail on staging",
+        f"st={st} status={rej.get('status')}",
+    )
+    try:
+        dev = login("dev@techhind.in", "Dev@12345")
+        st, denied, _ = req("POST", f"/api/work/tasks/{gid}/ready-to-live", cookie=dev)
+        check("TSK-12a", st == 403, f"st={st} {denied}")
+        st, early, _ = req("POST", f"/api/work/tasks/{gid}/complete", cookie=dev)
+        check("TSK-13a", st == 400, f"st={st} {early}")
+    except RuntimeError as e:
+        check("TSK-12a", False, str(e))
+        check("TSK-13a", False, str(e))
+    qa = login("qa@techhind.in", "Qa@123456")
+    st, live, _ = req("POST", f"/api/work/tasks/{gid}/ready-to-live", cookie=qa)
+    check("TSK-12b", st == 200 and live.get("status") == "ready_to_live", f"st={st} status={live.get('status')}")
+    dev = login("dev@techhind.in", "Dev@12345")
+    st, done, _ = req("POST", f"/api/work/tasks/{gid}/complete", cookie=dev)
+    check("TSK-13b", st == 200 and done.get("status") == "done", f"st={st} status={done.get('status')}")
+
     print(f"\nResult: {PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1
 

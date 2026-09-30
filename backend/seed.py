@@ -59,6 +59,7 @@ USERS = [
     ("Amit Shah", "dev@techhind.in", "Dev@12345", "developer"),
     ("Neha Patel", "pm@techhind.in", "Pm@123456", "project_manager"),
     ("Sonal Joshi", "qa@techhind.in", "Qa@123456", "qa"),
+    ("Meera Shah", "ba@techhind.in", "Ba@123456", "business_analyst"),
     ("Ravi Trainer", "trainer@techhind.in", "Train@123", "trainer"),
 ]
 

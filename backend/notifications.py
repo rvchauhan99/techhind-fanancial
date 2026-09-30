@@ -14,7 +14,10 @@ from core import db, iso_now, new_id, utcnow
 
 logger = logging.getLogger("notifications")
 
-OPEN_TASK_STATUSES = ("backlog", "todo", "in_progress", "in_review", "blocked")
+OPEN_TASK_STATUSES = (
+    "backlog", "todo", "in_progress", "in_review",
+    "testing_rejected", "ready_to_live", "blocked",
+)
 MENTION_NUDGE = timedelta(minutes=15)
 MENTION_MAX_AGE = timedelta(hours=24)
 

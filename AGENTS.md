@@ -2,7 +2,7 @@
 
 **TechHind Company Finance (TCF)** — standalone single-company GST finance app (INR, FY Apr–Mar, series `TH/{FY}/{SEQ}`).
 
-**Last synced:** 2026-09-30 — Task and ticket attachments accept `.md` / `.markdown` (`text/markdown`), including browsers that send `text/plain` or `application/octet-stream`. Logo, stamp, and signature stay image-only. Prior: Support tickets pro UI (chat bubbles, priority badges, image thumbs + lightbox).
+**Last synced:** 2026-09-30 — Task workflow adds Testing Rejected and Ready to Live, plus a Business Analyst role and `ba_id`. QA, BA, or a work manager signs off; writers complete only from Ready to Live. Prior: task and ticket attachments accept `.md`.
 
 ## Not Solar CRM
 

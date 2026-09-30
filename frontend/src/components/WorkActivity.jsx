@@ -13,6 +13,7 @@ const SYSTEM_ACTIONS = new Set([
   "status_changed", "assignee_changed", "observer_added", "observer_removed",
   "checklist_updated", "attachment_added", "attachment_removed",
   "reminder_set", "reminder_cleared", "project_created", "project_updated",
+  "testing_rejected", "ready_to_live", "ba_changed",
 ])
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")

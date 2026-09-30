@@ -85,6 +85,7 @@ const ROLE_BADGE = {
   sales: "bg-amber-500/15 text-amber-300 border-amber-400/30",
   support_agent: "bg-teal-500/15 text-teal-300 border-teal-400/30",
   hr: "bg-slate-500/15 text-slate-300 border-slate-400/30",
+  business_analyst: "bg-indigo-500/15 text-indigo-300 border-indigo-400/30",
   freelancer: "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-400/30",
 }
 

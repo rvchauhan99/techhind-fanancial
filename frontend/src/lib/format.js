@@ -62,6 +62,8 @@ export const STATUS_STYLES = {
   backlog: "bg-slate-100 text-slate-500 border-slate-300",
   in_progress: "bg-blue-50 text-blue-700 border-blue-200",
   in_review: "bg-violet-50 text-violet-700 border-violet-200",
+  testing_rejected: "bg-red-50 text-red-700 border-red-200",
+  ready_to_live: "bg-teal-50 text-teal-700 border-teal-200",
   blocked: "bg-red-50 text-red-700 border-red-200",
   done: "bg-emerald-50 text-emerald-700 border-emerald-200",
 };
@@ -74,8 +76,21 @@ export const STATUS_LABELS = {
   open: "Open", pending: "Pending", resolved: "Resolved", closed: "Closed",
   planned: "Planned", on_hold: "On Hold", completed: "Completed",
   backlog: "Backlog", todo: "To Do", in_progress: "In Progress",
-  in_review: "In Review", blocked: "Blocked", done: "Done",
+  in_review: "In Review", testing_rejected: "Testing Rejected",
+  ready_to_live: "Ready to Live", blocked: "Blocked", done: "Done",
 };
+
+export const TASK_STATUSES = [
+  "backlog", "todo", "in_progress", "in_review", "testing_rejected",
+  "ready_to_live", "blocked", "done", "cancelled",
+]
+
+export const TASK_KANBAN = [
+  "backlog", "todo", "in_progress", "in_review", "testing_rejected",
+  "ready_to_live", "blocked", "done",
+]
+
+export const taskStatusLabel = (value) => STATUS_LABELS[value] || value
 
 export const DOC_TYPE_LABELS = { INV: "Tax Invoice", CN: "Credit Note", DN: "Debit Note" };
 

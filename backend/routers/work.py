@@ -33,21 +33,30 @@ TASK_STATUSES = (
     "todo",
     "in_progress",
     "in_review",
+    "testing_rejected",
+    "ready_to_live",
     "blocked",
     "done",
     "cancelled",
 )
-KANBAN_COLUMNS = ("backlog", "todo", "in_progress", "in_review", "blocked", "done")
+KANBAN_COLUMNS = (
+    "backlog", "todo", "in_progress", "in_review",
+    "testing_rejected", "ready_to_live", "blocked", "done",
+)
 PRIORITIES = ("low", "normal", "high", "urgent")
-OPEN_STATUSES = ("backlog", "todo", "in_progress", "in_review", "blocked")
+OPEN_STATUSES = (
+    "backlog", "todo", "in_progress", "in_review",
+    "testing_rejected", "ready_to_live", "blocked",
+)
+SIGN_OFF_ROLES = ("qa", "business_analyst")
 PROJECT_FIELDS = [
     "name", "description", "status", "priority", "customer_id", "owner_id",
     "member_ids", "start_date", "due_date", "tags",
 ]
 TASK_FIELDS = [
     "title", "description", "status", "priority", "category", "task_type",
-    "project_id", "assignee_id", "observer_ids", "due_date", "start_date",
-    "tags", "reminder_at", "checklist", "attachment_ids",
+    "project_id", "assignee_id", "ba_id", "observer_ids", "due_date", "start_date",
+    "tags", "reminder_at", "checklist", "attachment_ids", "rejection_reason",
 ]
 LEGACY_TYPE_MAP = {"demo": "customer_demo"}
 MAX_TASK_ATTACHMENTS = 10
@@ -111,6 +120,7 @@ def _task_audience(*tasks: dict) -> list:
         if not task:
             continue
         ids.append(task.get("assignee_id"))
+        ids.append(task.get("ba_id"))
         ids.append(task.get("created_by"))
         ids.extend(task.get("observer_ids") or [])
     return ids
@@ -353,6 +363,8 @@ def _task_notice(diff: dict, number: str) -> tuple[str, str] | None:
         return "status_changed", f"Status {change.get('old')} → {change.get('new')} on {number}"
     if "assignee_id" in diff:
         return "assignee_changed", f"Reassigned {number}"
+    if "ba_id" in diff:
+        return "ba_changed", f"BA updated on {number}"
     if "observer_ids" in diff:
         old = set(diff["observer_ids"].get("old") or [])
         new = set(diff["observer_ids"].get("new") or [])
@@ -401,6 +413,8 @@ def _migrate_task_doc(t: dict) -> dict:
     t["category"] = t["task_type"]  # alias for older UI
     t["status"] = _normalize_status(t.get("status"))
     t.setdefault("observer_ids", [])
+    t.setdefault("ba_id", None)
+    t.setdefault("rejection_reason", "")
     t.setdefault("checklist", [])
     t.setdefault("attachment_ids", [])
     t.setdefault("tags", [])
@@ -437,9 +451,10 @@ async def _file_map(ids: list) -> list:
 async def _enrich_task(t: dict) -> dict:
     t = _migrate_task_doc(_strip(t) or {})
     umap = await _user_map(
-        [t.get("assignee_id"), t.get("created_by"), *(t.get("observer_ids") or [])]
+        [t.get("assignee_id"), t.get("ba_id"), t.get("created_by"), *(t.get("observer_ids") or [])]
     )
     t["assignee"] = umap.get(t.get("assignee_id"))
+    t["ba"] = umap.get(t.get("ba_id"))
     t["creator"] = umap.get(t.get("created_by"))
     t["observers"] = [umap[i] for i in (t.get("observer_ids") or []) if i in umap]
     if t.get("project_id"):
@@ -498,12 +513,14 @@ class TaskIn(BaseModel):
     task_type: Optional[str] = None
     project_id: Optional[str] = None
     assignee_id: Optional[str] = None
+    ba_id: Optional[str] = None
     observer_ids: List[str] = []
     due_date: Optional[str] = None
     start_date: Optional[str] = None
     reminder_at: Optional[str] = None
     tags: List[str] = []
     quick_testing: bool = False
+    rejection_reason: Optional[str] = None
 
 
 class TaskPatch(BaseModel):
@@ -515,11 +532,13 @@ class TaskPatch(BaseModel):
     task_type: Optional[str] = None
     project_id: Optional[str] = None
     assignee_id: Optional[str] = None
+    ba_id: Optional[str] = None
     observer_ids: Optional[List[str]] = None
     due_date: Optional[str] = None
     start_date: Optional[str] = None
     reminder_at: Optional[str] = None
     tags: Optional[List[str]] = None
+    rejection_reason: Optional[str] = None
 
 
 class CommentIn(BaseModel):
@@ -544,6 +563,29 @@ class ChecklistIn(BaseModel):
 
 class ReminderIn(BaseModel):
     reminder_at: Optional[str] = None  # null clears
+
+
+class RejectTestingIn(BaseModel):
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+def _can_sign_off(user: dict, caps: dict) -> bool:
+    return bool(caps.get("can_work_manage")) or (user.get("role") or "") in SIGN_OFF_ROLES
+
+
+def _assert_status_change(user: dict, caps: dict, old: str, new: str, rejection_reason: str | None):
+    if (old or "") == (new or ""):
+        return
+    if new == "testing_rejected":
+        if not _can_sign_off(user, caps):
+            raise HTTPException(status_code=403, detail="QA, BA, or a work manager must reject testing")
+        if not (rejection_reason or "").strip():
+            raise HTTPException(status_code=400, detail="Rejection reason is required")
+    if new == "ready_to_live":
+        if not _can_sign_off(user, caps):
+            raise HTTPException(status_code=403, detail="QA, BA, or a work manager must mark ready to live")
+    if new == "done" and not caps.get("can_work_manage") and old != "ready_to_live":
+        raise HTTPException(status_code=400, detail="Complete only from Ready to Live")
 
 
 def _validate_status(val: str, allowed: tuple, label: str):
@@ -921,10 +963,15 @@ async def create_task(body: TaskIn, user=Depends(require_capability("can_work_wr
     _validate_status(status, TASK_STATUSES, "status")
     _validate_priority(priority)
     _validate_task_type(task_type)
+    caps = await user_capabilities(user)
+    _assert_status_change(user, caps, "", status, body.rejection_reason)
     if body.project_id and not await db.projects.find_one({"id": body.project_id}):
         raise HTTPException(status_code=404, detail="Project not found")
     if assignee_id and not await db.users.find_one({"id": assignee_id, "active": {"$ne": False}}):
         raise HTTPException(status_code=400, detail="Invalid assignee")
+    ba_id = body.ba_id
+    if ba_id and not await db.users.find_one({"id": ba_id, "active": {"$ne": False}}):
+        raise HTTPException(status_code=400, detail="Invalid BA")
     observers = await _valid_user_ids(body.observer_ids)
     now = iso_now()
     number = await next_number("TSK", today())
@@ -939,6 +986,7 @@ async def create_task(body: TaskIn, user=Depends(require_capability("can_work_wr
         "category": task_type,
         "project_id": body.project_id,
         "assignee_id": assignee_id,
+        "ba_id": ba_id,
         "observer_ids": observers,
         "due_date": body.due_date,
         "start_date": body.start_date,
@@ -949,6 +997,7 @@ async def create_task(body: TaskIn, user=Depends(require_capability("can_work_wr
         "tags": body.tags or [],
         "started_at": None,
         "completed_at": None,
+        "rejection_reason": (body.rejection_reason or "").strip() if status == "testing_rejected" else "",
         "created_by": user["id"],
         "created_at": now,
         "updated_at": now,
@@ -1026,10 +1075,22 @@ async def patch_task(
         patch["category"] = tt
     if "status" in patch and patch["status"] is not None:
         _validate_status(patch["status"], TASK_STATUSES, "status")
+        reason = patch.get("rejection_reason")
+        if reason is None:
+            reason = existing.get("rejection_reason")
+        _assert_status_change(user, caps, existing.get("status") or "", patch["status"], reason)
+        if patch["status"] == "testing_rejected":
+            patch["rejection_reason"] = (reason or "").strip()
         if patch["status"] == "in_progress" and not existing.get("started_at"):
             patch["started_at"] = iso_now()
         if patch["status"] == "done" and not existing.get("completed_at"):
             patch["completed_at"] = iso_now()
+    if "ba_id" in patch:
+        if is_own_work_role(user):
+            raise HTTPException(status_code=403, detail="Freelancers cannot change the BA")
+        new_ba = patch["ba_id"]
+        if new_ba and not await db.users.find_one({"id": new_ba, "active": {"$ne": False}}):
+            raise HTTPException(status_code=400, detail="Invalid BA")
     if "priority" in patch and patch["priority"] is not None:
         _validate_priority(patch["priority"])
     if "observer_ids" in patch and patch["observer_ids"] is not None:
@@ -1065,9 +1126,14 @@ async def patch_task(
         action = "assignee_changed"
     notice = _task_notice(diff, number)
     summary = notice[1] if notice else f"Updated {number}"
+    comment = None
+    if patch.get("status") == "testing_rejected":
+        comment = patch.get("rejection_reason") or ""
+        summary = f"Testing rejected on {number}"
+        action = "testing_rejected"
     await _work_activity(
         user, "task", task_id, action,
-        summary, diff=diff,
+        summary, diff=diff, comment=comment,
     )
     if notice:
         ntype, title = notice
@@ -1115,6 +1181,8 @@ async def complete_task(task_id: str, user=Depends(require_capability("can_work_
         raise HTTPException(status_code=404, detail="Task not found")
     if not _freelancer_can_access_task(existing, user):
         raise HTTPException(status_code=403, detail="Not allowed to update this task")
+    caps = await user_capabilities(user)
+    _assert_status_change(user, caps, existing.get("status") or "", "done", None)
     now = iso_now()
     patch = {
         "status": "done",
@@ -1132,6 +1200,72 @@ async def complete_task(task_id: str, user=Depends(require_capability("can_work_
         user, _task_audience(existing),
         source="task", ntype="task_completed",
         title=f"Completed {existing.get('number')}",
+        body=existing.get("title") or "",
+        entity_type="task", entity_id=task_id,
+    )
+    return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
+
+
+@router.post("/tasks/{task_id}/reject-testing")
+async def reject_testing(
+    task_id: str,
+    body: RejectTestingIn,
+    user=Depends(require_capability("can_work_write")),
+):
+    existing = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not _freelancer_can_access_task(existing, user):
+        raise HTTPException(status_code=403, detail="Not allowed to update this task")
+    caps = await user_capabilities(user)
+    reason = body.reason.strip()
+    _assert_status_change(user, caps, existing.get("status") or "", "testing_rejected", reason)
+    now = iso_now()
+    await db.tasks.update_one(
+        {"id": task_id},
+        {"$set": {"status": "testing_rejected", "rejection_reason": reason, "updated_at": now}},
+    )
+    number = existing.get("number") or ""
+    await _work_activity(
+        user, "task", task_id, "testing_rejected",
+        f"Testing rejected on {number}",
+        diff={"status": {"old": existing.get("status"), "new": "testing_rejected"}},
+        comment=reason,
+    )
+    await _inbox(
+        user, _task_audience(existing),
+        source="task", ntype="testing_rejected",
+        title=f"Testing rejected on {number}",
+        body=reason,
+        entity_type="task", entity_id=task_id,
+    )
+    return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
+
+
+@router.post("/tasks/{task_id}/ready-to-live")
+async def ready_to_live(task_id: str, user=Depends(require_capability("can_work_write"))):
+    existing = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not _freelancer_can_access_task(existing, user):
+        raise HTTPException(status_code=403, detail="Not allowed to update this task")
+    caps = await user_capabilities(user)
+    _assert_status_change(user, caps, existing.get("status") or "", "ready_to_live", None)
+    now = iso_now()
+    await db.tasks.update_one(
+        {"id": task_id},
+        {"$set": {"status": "ready_to_live", "updated_at": now}},
+    )
+    number = existing.get("number") or ""
+    await _work_activity(
+        user, "task", task_id, "ready_to_live",
+        f"Ready to live on {number}",
+        diff={"status": {"old": existing.get("status"), "new": "ready_to_live"}},
+    )
+    await _inbox(
+        user, _task_audience(existing),
+        source="task", ntype="ready_to_live",
+        title=f"Ready to live {number}",
         body=existing.get("title") or "",
         entity_type="task", entity_id=task_id,
     )
