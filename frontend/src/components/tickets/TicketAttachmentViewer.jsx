@@ -374,6 +374,7 @@ export function PriorityBadge({ value }) {
     low: "bg-slate-50 text-slate-600 border-slate-200",
     normal: "bg-blue-50 text-blue-700 border-blue-200",
     high: "bg-red-50 text-red-700 border-red-200",
+    urgent: "bg-red-100 text-red-900 border-red-400",
   }
   return (
     <span

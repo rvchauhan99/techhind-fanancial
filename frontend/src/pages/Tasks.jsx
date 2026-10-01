@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import api, { apiError } from "../lib/api"
 import { fmtDate, TASK_KANBAN, TASK_STATUSES, taskStatusLabel } from "../lib/format"
 import Layout, { Empty, StatusBadge } from "../components/Layout"
+import { PriorityBadge } from "../components/tickets/TicketAttachmentViewer"
 import { useAuth } from "../context/AuthContext"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
@@ -39,6 +40,8 @@ const BASE_SCHEMA = [
   { key: "q", type: FIELD.TEXT, label: "Search", placeholder: "Title…", width: "w-36" },
   { key: "status", type: FIELD.SELECT, label: "Status", width: "w-32",
     options: TASK_STATUSES.map((s) => ({ value: s, label: taskStatusLabel(s) })) },
+  { key: "priority", type: FIELD.SELECT, label: "Priority", width: "w-28",
+    options: ["low", "normal", "high", "urgent"].map((s) => ({ value: s, label: s })) },
   { key: "task_type", type: FIELD.SELECT, label: "Type", width: "w-36",
     options: TYPES.map((t) => ({ value: t, label: t })) },
   { key: "mine", type: FIELD.TOGGLE, label: "Mine", placeholder: "Assigned to me" },
@@ -230,6 +233,7 @@ export default function Tasks() {
                 <th className="text-left px-3 py-2">Number</th>
                 <th className="text-left px-3 py-2">Title</th>
                 <th className="text-left px-3 py-2">Type</th>
+                <th className="text-left px-3 py-2">Priority</th>
                 <th className="text-left px-3 py-2">Project</th>
                 <th className="text-left px-3 py-2">Assignee</th>
                 <th className="text-left px-3 py-2">BA</th>
@@ -245,14 +249,15 @@ export default function Tasks() {
                   <tr key={t.id} data-testid={`task-row-${t.id}`}
                     className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
                     onClick={() => navigate(`/tasks/${t.id}`)}>
-                    <td className="px-3 py-2 font-mono text-xs text-[#0066CC]">{t.number}</td>
-                    <td className="px-3 py-2 font-medium">{t.title}</td>
-                    <td className="px-3 py-2 text-xs capitalize">{t.task_type || t.category}</td>
-                    <td className="px-3 py-2 text-xs text-slate-600">{t.project?.name || "—"}</td>
-                    <td className="px-3 py-2 text-xs">{t.assignee?.name || "—"}</td>
-                    <td className="px-3 py-2 text-xs">{t.ba?.name || "—"}</td>
-                    <td className="px-3 py-2"><StatusBadge value={t.status} /></td>
-                    <td className={`px-3 py-2 font-mono text-[11px] ${overdue ? "text-red-600 font-semibold" : "text-slate-500"}`}>
+                    <td className="px-3 py-2 font-mono text-xs text-[#0066CC]" data-label="Number">{t.number}</td>
+                    <td className="px-3 py-2 font-medium" data-label="Title">{t.title}</td>
+                    <td className="px-3 py-2 text-xs capitalize" data-label="Type">{t.task_type || t.category}</td>
+                    <td className="px-3 py-2" data-label="Priority"><PriorityBadge value={t.priority} /></td>
+                    <td className="px-3 py-2 text-xs text-slate-600" data-label="Project">{t.project?.name || "—"}</td>
+                    <td className="px-3 py-2 text-xs" data-label="Assignee">{t.assignee?.name || "—"}</td>
+                    <td className="px-3 py-2 text-xs" data-label="BA">{t.ba?.name || "—"}</td>
+                    <td className="px-3 py-2" data-label="Status"><StatusBadge value={t.status} /></td>
+                    <td className={`px-3 py-2 font-mono text-[11px] ${overdue ? "text-red-600 font-semibold" : "text-slate-500"}`} data-label="Due">
                       {fmtDate(t.due_date)}
                     </td>
                   </tr>
@@ -282,7 +287,10 @@ export default function Tasks() {
                     <div className="font-mono text-[10px] text-[#0066CC]">{t.number}</div>
                     <div className="text-xs font-medium text-slate-800 leading-snug mt-0.5">{t.title}</div>
                     <div className="mt-1.5 flex items-center justify-between gap-1">
-                      <span className="text-[10px] capitalize text-slate-500">{t.task_type}</span>
+                      <div className="flex items-center gap-1 min-w-0">
+                        <span className="text-[10px] capitalize text-slate-500">{t.task_type}</span>
+                        <PriorityBadge value={t.priority} />
+                      </div>
                       <span className="text-[10px] text-slate-500 truncate">{t.ba?.name || t.assignee?.name || "—"}</span>
                     </div>
                     {canCap("can_work_write") && (
@@ -320,6 +328,7 @@ export default function Tasks() {
                       onClick={() => navigate(`/tasks/${t.id}`)}>
                       <td className="px-3 py-1.5 font-mono text-xs text-[#0066CC] w-36">{t.number}</td>
                       <td className="px-3 py-1.5">{t.title}</td>
+                      <td className="px-3 py-1.5"><PriorityBadge value={t.priority} /></td>
                       <td className="px-3 py-1.5"><StatusBadge value={t.status} /></td>
                       <td className="px-3 py-1.5 text-xs">{t.assignee?.name || "—"}</td>
                       <td className="px-3 py-1.5 font-mono text-[11px] text-slate-500">{fmtDate(t.due_date)}</td>

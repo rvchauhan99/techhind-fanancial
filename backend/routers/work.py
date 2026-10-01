@@ -792,6 +792,7 @@ def _build_task_filter(
     assignee_id: Optional[str],
     category: Optional[str],
     task_type: Optional[str],
+    priority: Optional[str],
     mine: bool,
     overdue: bool,
     observer_id: Optional[str],
@@ -804,6 +805,9 @@ def _build_task_filter(
         filt["status"] = status
     if project_id:
         filt["project_id"] = project_id
+    if priority:
+        _validate_priority(priority)
+        filt["priority"] = priority
     tt = task_type or category
     if tt:
         filt["task_type"] = _normalize_task_type(tt)
@@ -855,12 +859,13 @@ async def tasks_board(
     assignee_id: Optional[str] = None,
     mine: bool = False,
     task_type: Optional[str] = None,
+    priority: Optional[str] = None,
     q: Optional[str] = None,
     user=Depends(require_roles(*ALL_ROLES)),
 ):
     filt = _build_task_filter(
         status=None, project_id=project_id, assignee_id=assignee_id,
-        category=None, task_type=task_type, mine=mine, overdue=False,
+        category=None, task_type=task_type, priority=priority, mine=mine, overdue=False,
         observer_id=None, due_bucket=None, q=q, user=user,
     )
     filt["status"] = {"$in": list(KANBAN_COLUMNS)}
@@ -881,12 +886,13 @@ async def tasks_deadline(
     assignee_id: Optional[str] = None,
     mine: bool = False,
     task_type: Optional[str] = None,
+    priority: Optional[str] = None,
     q: Optional[str] = None,
     user=Depends(require_roles(*ALL_ROLES)),
 ):
     filt = _build_task_filter(
         status=None, project_id=project_id, assignee_id=assignee_id,
-        category=None, task_type=task_type, mine=mine, overdue=False,
+        category=None, task_type=task_type, priority=priority, mine=mine, overdue=False,
         observer_id=None, due_bucket=None, q=q, user=user,
     )
     filt["status"] = {"$in": list(OPEN_STATUSES)}
@@ -925,6 +931,7 @@ async def list_tasks(
     assignee_id: Optional[str] = None,
     category: Optional[str] = None,
     task_type: Optional[str] = None,
+    priority: Optional[str] = None,
     mine: bool = False,
     overdue: bool = False,
     observer_id: Optional[str] = None,
@@ -938,7 +945,7 @@ async def list_tasks(
     from list_query import apply_date_range
     filt = _build_task_filter(
         status=status, project_id=project_id, assignee_id=assignee_id,
-        category=category, task_type=task_type, mine=mine, overdue=overdue,
+        category=category, task_type=task_type, priority=priority, mine=mine, overdue=overdue,
         observer_id=observer_id, due_bucket=due_bucket, q=q, user=user,
     )
     apply_date_range(filt, "due_date", date_from or "", date_to or "")

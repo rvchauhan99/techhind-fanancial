@@ -185,6 +185,16 @@ def main():
     )
     check("TSK-08", st == 200 and qt.get("task_type") == "testing" and qt.get("priority") == "high", f"st={st} type={qt.get('task_type')} pri={qt.get('priority')}")
 
+    # TSK-08b priority list filter
+    st, pri_rows, _ = req("GET", "/api/work/tasks?priority=high", cookie=admin)
+    check(
+        "TSK-08b",
+        st == 200 and isinstance(pri_rows, list) and all(t.get("priority") == "high" for t in (pri_rows or [])),
+        f"st={st} n={len(pri_rows or [])}",
+    )
+    st, bad_pri, _ = req("GET", "/api/work/tasks?priority=critical", cookie=admin)
+    check("TSK-08c", st == 400, f"st={st} body={bad_pri}")
+
     # TSK-09 viewer
     viewer = login("viewer@techhind.in", "View@12345")
     st, _, _ = req("POST", "/api/work/tasks", {"title": "nope"}, cookie=viewer)
