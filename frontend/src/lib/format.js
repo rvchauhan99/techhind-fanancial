@@ -90,6 +90,9 @@ export const TASK_KANBAN = [
   "ready_to_live", "blocked", "done",
 ]
 
+/** Kanban columns shown by default (Done hidden until "Show done") */
+export const TASK_KANBAN_DEFAULT = TASK_KANBAN.filter((s) => s !== "done")
+
 export const taskStatusLabel = (value) => STATUS_LABELS[value] || value
 
 export const DOC_TYPE_LABELS = { INV: "Tax Invoice", CN: "Credit Note", DN: "Debit Note" };

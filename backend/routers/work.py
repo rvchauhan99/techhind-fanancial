@@ -44,10 +44,16 @@ KANBAN_COLUMNS = (
     "testing_rejected", "ready_to_live", "blocked", "done",
 )
 PRIORITIES = ("low", "normal", "high", "urgent")
+# Higher priority first (urgent → low)
+PRIORITY_RANK = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
+# Workflow order for list/board secondary sort
+STATUS_RANK = {s: i for i, s in enumerate(TASK_STATUSES)}
 OPEN_STATUSES = (
     "backlog", "todo", "in_progress", "in_review",
     "testing_rejected", "ready_to_live", "blocked",
 )
+# Kanban columns hide Done by default (same as list)
+BOARD_COLUMNS = tuple(s for s in KANBAN_COLUMNS if s != "done")
 SIGN_OFF_ROLES = ("qa", "business_analyst")
 PROJECT_FIELDS = [
     "name", "description", "status", "priority", "customer_id", "owner_id",
@@ -603,6 +609,15 @@ def _validate_task_type(val: str):
         raise HTTPException(status_code=400, detail=f"Invalid task_type: {val}")
 
 
+def _task_sort_key(task: dict) -> tuple:
+    """Priority (urgent first), then workflow status, then due date, then newer updated_at."""
+    pri = PRIORITY_RANK.get((task.get("priority") or "normal").lower(), 99)
+    st = STATUS_RANK.get(_normalize_status(task.get("status")), 99)
+    due = task.get("due_date") or "9999-99-99"
+    updated = task.get("updated_at") or ""
+    return (pri, st, due, updated)
+
+
 def _due_bucket_filter(bucket: str, today_s: str) -> dict:
     d0 = date.fromisoformat(today_s)
     if bucket == "overdue":
@@ -860,6 +875,7 @@ async def tasks_board(
     mine: bool = False,
     task_type: Optional[str] = None,
     priority: Optional[str] = None,
+    include_done: bool = False,
     q: Optional[str] = None,
     user=Depends(require_roles(*ALL_ROLES)),
 ):
@@ -868,14 +884,17 @@ async def tasks_board(
         category=None, task_type=task_type, priority=priority, mine=mine, overdue=False,
         observer_id=None, due_bucket=None, q=q, user=user,
     )
-    filt["status"] = {"$in": list(KANBAN_COLUMNS)}
+    columns_def = KANBAN_COLUMNS if include_done else BOARD_COLUMNS
+    filt["status"] = {"$in": list(columns_def)}
     rows = await db.tasks.find(filt, {"_id": 0}).sort("updated_at", -1).to_list(500)
     enriched = [await _enrich_task(r) for r in rows]
     columns = []
-    for st in KANBAN_COLUMNS:
+    for st in columns_def:
+        col_tasks = [t for t in enriched if t.get("status") == st]
+        col_tasks.sort(key=_task_sort_key)
         columns.append({
             "status": st,
-            "tasks": [t for t in enriched if t.get("status") == st],
+            "tasks": col_tasks,
         })
     return {"columns": columns}
 
@@ -902,6 +921,8 @@ async def tasks_deadline(
     for r in rows:
         t = await _enrich_task(r)
         buckets[_classify_due(t.get("due_date"), today_s)].append(t)
+    for key in buckets:
+        buckets[key].sort(key=_task_sort_key)
     return {
         "buckets": [
             {"key": k, "tasks": buckets[k]}
@@ -934,6 +955,7 @@ async def list_tasks(
     priority: Optional[str] = None,
     mine: bool = False,
     overdue: bool = False,
+    include_done: bool = False,
     observer_id: Optional[str] = None,
     due_bucket: Optional[str] = None,
     q: Optional[str] = None,
@@ -948,9 +970,14 @@ async def list_tasks(
         category=category, task_type=task_type, priority=priority, mine=mine, overdue=overdue,
         observer_id=observer_id, due_bucket=due_bucket, q=q, user=user,
     )
+    # Default: hide Done/Cancelled unless a status is chosen or include_done is on
+    if not status and "status" not in filt and not include_done:
+        filt["status"] = {"$in": list(OPEN_STATUSES)}
     apply_date_range(filt, "due_date", date_from or "", date_to or "")
-    rows = await db.tasks.find(filt, {"_id": 0}).sort("updated_at", -1).to_list(limit)
-    return [await _enrich_task(r) for r in rows]
+    rows = await db.tasks.find(filt, {"_id": 0}).to_list(limit)
+    enriched = [await _enrich_task(r) for r in rows]
+    enriched.sort(key=_task_sort_key)
+    return enriched
 
 
 @router.post("/tasks")

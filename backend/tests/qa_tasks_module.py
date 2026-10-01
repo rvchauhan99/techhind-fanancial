@@ -195,6 +195,34 @@ def main():
     st, bad_pri, _ = req("GET", "/api/work/tasks?priority=critical", cookie=admin)
     check("TSK-08c", st == 400, f"st={st} body={bad_pri}")
 
+    # TSK-08d default list hides done; include_done / status=done can show them
+    st, done_task, _ = req(
+        "POST",
+        "/api/work/tasks",
+        {"title": "Done-default probe", "status": "todo", "priority": "low"},
+        cookie=admin,
+    )
+    did = done_task.get("id")
+    st, finished, _ = req("PATCH", f"/api/work/tasks/{did}", {"status": "ready_to_live"}, cookie=admin)
+    st, finished, _ = req("POST", f"/api/work/tasks/{did}/complete", cookie=admin)
+    check("TSK-08d-setup", st == 200 and finished.get("status") == "done", f"st={st}")
+    st, default_rows, _ = req("GET", "/api/work/tasks", cookie=admin)
+    check(
+        "TSK-08d",
+        st == 200 and all(t.get("status") != "done" for t in (default_rows or [])),
+        f"st={st} n={len(default_rows or [])}",
+    )
+    st, with_done, _ = req("GET", "/api/work/tasks?include_done=true", cookie=admin)
+    check(
+        "TSK-08e",
+        st == 200 and any(t.get("id") == did for t in (with_done or [])),
+        f"st={st} n={len(with_done or [])}",
+    )
+    # TSK-08f sort: urgent before low among open tasks
+    ranks = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
+    pris = [ranks.get((t.get("priority") or "normal").lower(), 99) for t in (default_rows or [])]
+    check("TSK-08f", pris == sorted(pris), f"pris={pris[:12]}")
+
     # TSK-09 viewer
     viewer = login("viewer@techhind.in", "View@12345")
     st, _, _ = req("POST", "/api/work/tasks", {"title": "nope"}, cookie=viewer)

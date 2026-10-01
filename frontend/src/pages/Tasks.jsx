@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { Plus, LayoutList, Columns3, CalendarClock } from "lucide-react"
 import { toast } from "sonner"
 import api, { apiError } from "../lib/api"
-import { fmtDate, TASK_KANBAN, TASK_STATUSES, taskStatusLabel } from "../lib/format"
+import { fmtDate, TASK_KANBAN, TASK_KANBAN_DEFAULT, TASK_STATUSES, taskStatusLabel } from "../lib/format"
 import Layout, { Empty, StatusBadge } from "../components/Layout"
 import { PriorityBadge } from "../components/tickets/TicketAttachmentViewer"
 import { useAuth } from "../context/AuthContext"
@@ -46,6 +46,7 @@ const BASE_SCHEMA = [
     options: TYPES.map((t) => ({ value: t, label: t })) },
   { key: "mine", type: FIELD.TOGGLE, label: "Mine", placeholder: "Assigned to me" },
   { key: "overdue", type: FIELD.TOGGLE, label: "Overdue", placeholder: "Overdue" },
+  { key: "include_done", type: FIELD.TOGGLE, label: "Done", placeholder: "Show done" },
   { key: "project_id", type: FIELD.SELECT, label: "Project", width: "w-40", options: [] },
   { key: "assignee_id", type: FIELD.SELECT, label: "Assignee", width: "w-40", options: [] },
   { key: "dates", type: FIELD.DATE_RANGE, label: "Due", fromKey: "date_from", toKey: "date_to" },
@@ -88,6 +89,7 @@ export default function Tasks() {
     delete common.view
     if (common.mine) common.mine = true
     if (common.overdue) common.overdue = true
+    if (common.include_done) common.include_done = true
 
     if (view === "kanban") {
       api.get("/work/tasks/board", { params: common })
@@ -271,7 +273,7 @@ export default function Tasks() {
 
       {view === "kanban" && (
         <div className="flex gap-2 overflow-x-auto pb-2 snap-x snap-mandatory" data-testid="tasks-kanban">
-          {(board?.columns || TASK_KANBAN.map((s) => ({ status: s, tasks: [] }))).map((col) => (
+          {(board?.columns || (values.include_done ? TASK_KANBAN : TASK_KANBAN_DEFAULT).map((s) => ({ status: s, tasks: [] }))).map((col) => (
             <div key={col.status} className="w-56 shrink-0 snap-start bg-slate-50 border border-slate-200 rounded-lg" data-testid={`kanban-${col.status}`}>
               <div className="px-2.5 py-2 border-b border-slate-200 flex items-center justify-between">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">{taskStatusLabel(col.status)}</span>
