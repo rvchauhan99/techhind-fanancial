@@ -2,7 +2,7 @@
 
 **TechHind Company Finance (TCF)** — standalone single-company GST finance app (INR, FY Apr–Mar, series `TH/{FY}/{SEQ}`).
 
-**Last synced:** 2026-10-01 — Tasks default hide Done; list/board sort by priority then status; `include_done` toggle. Prior: Tasks list/board/deadline accept `priority` filter; list shows Priority column. Prior: Task workflow adds Testing Rejected and Ready to Live, plus a Business Analyst role and `ba_id`. QA, BA, or a work manager signs off; writers complete only from Ready to Live. Prior: task and ticket attachments accept `.md`.
+**Last synced:** 2026-10-01 — Task list/board sort: priority then status (ready_to_live → in_review → testing_rejected → in_progress → todo), older `created_at` first within band. Prior: Tasks list pagination + fixed title search. Prior: Tasks default hide Done; `include_done` toggle. Prior: priority filter + Priority column. Prior: Testing Rejected / Ready to Live + BA `ba_id`. Prior: task/ticket `.md` attachments.
 
 ## Not Solar CRM
 

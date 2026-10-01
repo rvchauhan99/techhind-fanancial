@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Plus, LayoutList, Columns3, CalendarClock } from "lucide-react"
+import { Plus, LayoutList, Columns3, CalendarClock, ChevronLeft, ChevronRight } from "lucide-react"
 import { toast } from "sonner"
 import api, { apiError } from "../lib/api"
 import { fmtDate, TASK_KANBAN, TASK_KANBAN_DEFAULT, TASK_STATUSES, taskStatusLabel } from "../lib/format"
@@ -21,6 +21,8 @@ const TYPES = [
   "training", "support_ops", "other",
 ]
 
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
+
 const emptyForm = (userId) => ({
   title: "",
   description: "",
@@ -37,7 +39,7 @@ const emptyForm = (userId) => ({
 })
 
 const BASE_SCHEMA = [
-  { key: "q", type: FIELD.TEXT, label: "Search", placeholder: "Title…", width: "w-36" },
+  { key: "q", type: FIELD.TEXT, label: "Search", placeholder: "Title / #…", width: "w-36" },
   { key: "status", type: FIELD.SELECT, label: "Status", width: "w-32",
     options: TASK_STATUSES.map((s) => ({ value: s, label: taskStatusLabel(s) })) },
   { key: "priority", type: FIELD.SELECT, label: "Priority", width: "w-28",
@@ -58,6 +60,7 @@ export default function Tasks() {
   const canCreate = canCap("can_work_write") && !isFreelancer
   const navigate = useNavigate()
   const [rows, setRows] = useState(null)
+  const [total, setTotal] = useState(0)
   const [board, setBoard] = useState(null)
   const [deadline, setDeadline] = useState(null)
   const [open, setOpen] = useState(false)
@@ -66,9 +69,12 @@ export default function Tasks() {
   const [users, setUsers] = useState([])
   const [form, setForm] = useState(() => emptyForm(user?.id))
   const { values, setFilter, setMany, clearFilters, activeCount, apiParams } = useListFilters(BASE_SCHEMA, {
-    preserve: ["view"],
+    preserve: ["view", "page", "limit"],
   })
   const view = values.view || "list"
+  const page = Math.max(1, parseInt(values.page || "1", 10) || 1)
+  const pageSize = PAGE_SIZE_OPTIONS.includes(Number(values.limit)) ? Number(values.limit) : 50
+  const totalPages = Math.max(1, Math.ceil((total || 0) / pageSize))
 
   const schema = useMemo(() => {
     let fields = BASE_SCHEMA
@@ -82,11 +88,31 @@ export default function Tasks() {
     })
   }, [projects, users, isFreelancer])
 
-  const setView = (v) => setMany({ view: v })
+  const setView = (v) => setMany({ view: v, page: "1" })
+
+  const setFilterResetPage = (key, value, opts) => {
+    if (key === "page" || key === "limit") {
+      setFilter(key, value, opts)
+      return
+    }
+    if (opts?.debounce) {
+      setFilter(key, value, opts)
+      setMany({ page: "1" })
+      return
+    }
+    setMany({ [key]: value === "" || value == null || value === "all" ? "" : value, page: "1" })
+  }
+
+  const clearFiltersKeepView = () => {
+    clearFilters()
+    setMany({ view, page: "1", limit: String(pageSize) })
+  }
 
   const load = () => {
     const common = { ...apiParams }
     delete common.view
+    delete common.page
+    delete common.limit
     if (common.mine) common.mine = true
     if (common.overdue) common.overdue = true
     if (common.include_done) common.include_done = true
@@ -103,12 +129,29 @@ export default function Tasks() {
         .catch(() => setDeadline({ buckets: [] }))
       return
     }
-    api.get("/work/tasks", { params: common })
-      .then((r) => setRows(r.data))
-      .catch(() => setRows([]))
+    api.get("/work/tasks", { params: { ...common, page, limit: pageSize } })
+      .then((r) => {
+        const data = r.data
+        if (Array.isArray(data)) {
+          setRows(data)
+          setTotal(data.length)
+        } else {
+          setRows(data?.items || [])
+          setTotal(Number(data?.total) || 0)
+        }
+      })
+      .catch(() => {
+        setRows([])
+        setTotal(0)
+      })
   }
 
-  useEffect(() => { load() }, [view, apiParams]) // eslint-disable-line
+  useEffect(() => { load() }, [view, apiParams, page, pageSize]) // eslint-disable-line
+
+  useEffect(() => {
+    if (view !== "list") return
+    if (page > totalPages) setMany({ page: String(totalPages) })
+  }, [totalPages, page, view]) // eslint-disable-line
 
   useEffect(() => {
     api.get("/work/projects").then((r) => setProjects(r.data || [])).catch(() => {})
@@ -189,6 +232,9 @@ export default function Tasks() {
     { key: "deadline", label: "Deadline", icon: CalendarClock },
   ], [])
 
+  const rangeFrom = total === 0 ? 0 : (page - 1) * pageSize + 1
+  const rangeTo = Math.min(page * pageSize, total)
+
   return (
     <Layout
       title="My Work"
@@ -225,8 +271,8 @@ export default function Tasks() {
         </div>
       }
     >
-      <FilterBar schema={schema} values={values} setFilter={setFilter}
-        clearFilters={clearFilters} activeCount={activeCount} testId="tasks-filters" />
+      <FilterBar schema={schema} values={values} setFilter={setFilterResetPage}
+        clearFilters={clearFiltersKeepView} activeCount={activeCount} testId="tasks-filters" />
       {view === "list" && (
         <div className="bg-white border border-slate-200 rounded-lg" data-testid="tasks-table">
           <table className="w-full text-sm pwa-table">
@@ -268,6 +314,60 @@ export default function Tasks() {
             </tbody>
           </table>
           {rows && !rows.length && <Empty label="No tasks" />}
+          {rows && (
+            <div
+              className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-t border-slate-100 bg-slate-50/80"
+              data-testid="tasks-pagination"
+            >
+              <div className="text-[11px] text-slate-600 font-mono" data-testid="tasks-page-range">
+                {total === 0 ? "0 tasks" : `${rangeFrom}–${rangeTo} of ${total}`}
+              </div>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(v) => setMany({ limit: v, page: "1" })}
+                >
+                  <SelectTrigger className="h-7 w-[4.5rem] text-xs bg-white" data-testid="tasks-page-size">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAGE_SIZE_OPTIONS.map((n) => (
+                      <SelectItem key={n} value={String(n)}>{n}/page</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="flex items-center gap-0.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    disabled={page <= 1}
+                    data-testid="tasks-page-prev"
+                    onClick={() => setMany({ page: String(page - 1) })}
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </Button>
+                  <span className="text-[11px] font-mono text-slate-600 px-1.5 min-w-[4.5rem] text-center" data-testid="tasks-page-label">
+                    {page}/{totalPages}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    disabled={page >= totalPages}
+                    data-testid="tasks-page-next"
+                    onClick={() => setMany({ page: String(page + 1) })}
+                    aria-label="Next page"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

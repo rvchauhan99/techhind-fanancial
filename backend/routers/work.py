@@ -46,8 +46,19 @@ KANBAN_COLUMNS = (
 PRIORITIES = ("low", "normal", "high", "urgent")
 # Higher priority first (urgent → low)
 PRIORITY_RANK = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
-# Workflow order for list/board secondary sort
-STATUS_RANK = {s: i for i, s in enumerate(TASK_STATUSES)}
+# List/board secondary sort (user workflow urgency within a priority band)
+LIST_STATUS_ORDER = (
+    "ready_to_live",
+    "in_review",
+    "testing_rejected",
+    "in_progress",
+    "todo",
+    "backlog",
+    "blocked",
+    "done",
+    "cancelled",
+)
+STATUS_RANK = {s: i for i, s in enumerate(LIST_STATUS_ORDER)}
 OPEN_STATUSES = (
     "backlog", "todo", "in_progress", "in_review",
     "testing_rejected", "ready_to_live", "blocked",
@@ -610,12 +621,12 @@ def _validate_task_type(val: str):
 
 
 def _task_sort_key(task: dict) -> tuple:
-    """Priority (urgent first), then workflow status, then due date, then newer updated_at."""
+    """Priority (urgent first), then status sequence, then older tasks first within the band."""
     pri = PRIORITY_RANK.get((task.get("priority") or "normal").lower(), 99)
     st = STATUS_RANK.get(_normalize_status(task.get("status")), 99)
-    due = task.get("due_date") or "9999-99-99"
-    updated = task.get("updated_at") or ""
-    return (pri, st, due, updated)
+    # Ascending created_at → older first; missing timestamps sort last
+    created = task.get("created_at") or "9999-12-31T23:59:59"
+    return (pri, st, created)
 
 
 def _due_bucket_filter(bucket: str, today_s: str) -> dict:
@@ -845,14 +856,9 @@ def _build_task_filter(
         filt["due_date"] = {"$lt": today_s}
         filt["status"] = {"$in": list(OPEN_STATUSES)}
     if q and q.strip():
-        q_clause = [
-            {"title": {"$regex": q.strip(), "$options": "i"}},
-            {"number": {"$regex": q.strip(), "$options": "i"}},
-        ]
-        if "$or" in filt:
-            filt = {"$and": [{"$or": filt.pop("$or")}, {"$or": q_clause}]}
-        else:
-            filt["$or"] = q_clause
+        from list_query import apply_q
+        # Escaped regex + preserve other filters when freelancer/mine already set $or
+        filt = apply_q(filt, q, ["title", "number", "description"])
     return filt
 
 
@@ -961,9 +967,11 @@ async def list_tasks(
     q: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
-    limit: int = Query(100, ge=1, le=500),
+    page: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
     user=Depends(require_roles(*ALL_ROLES)),
 ):
+    """List tasks. page=0 returns a bare list (legacy). page>=1 returns {items,page,limit,total}."""
     from list_query import apply_date_range
     filt = _build_task_filter(
         status=status, project_id=project_id, assignee_id=assignee_id,
@@ -974,10 +982,18 @@ async def list_tasks(
     if not status and "status" not in filt and not include_done:
         filt["status"] = {"$in": list(OPEN_STATUSES)}
     apply_date_range(filt, "due_date", date_from or "", date_to or "")
-    rows = await db.tasks.find(filt, {"_id": 0}).to_list(limit)
-    enriched = [await _enrich_task(r) for r in rows]
-    enriched.sort(key=_task_sort_key)
-    return enriched
+    # Fetch match set (capped), normalize + sort, then page — keeps priority/status order correct
+    rows = await db.tasks.find(filt, {"_id": 0}).to_list(5000)
+    rows = [_migrate_task_doc(_strip(r) or {}) for r in rows]
+    rows.sort(key=_task_sort_key)
+    total = len(rows)
+    if page <= 0:
+        slice_rows = rows[:limit]
+        return [await _enrich_task(r) for r in slice_rows]
+    skip = (page - 1) * limit
+    page_rows = rows[skip:skip + limit]
+    items = [await _enrich_task(r) for r in page_rows]
+    return {"items": items, "page": page, "limit": limit, "total": total}
 
 
 @router.post("/tasks")

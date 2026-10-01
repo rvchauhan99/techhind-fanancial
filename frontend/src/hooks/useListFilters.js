@@ -112,9 +112,17 @@ export function useListFilters(schema, { preserve = [] } = {}) {
 /** Local draft state for debounced text that mirrors URL after debounce. */
 export function useDebouncedDraft(urlValue, onCommit) {
   const [draft, setDraft] = useState(urlValue)
-  useEffect(() => { setDraft(urlValue) }, [urlValue])
+  const lastSent = useRef(urlValue)
+  useEffect(() => {
+    // Sync from URL only when it changed externally (clear / back / link), not while
+    // our own debounce is catching up mid-typing.
+    if (urlValue === lastSent.current) return
+    setDraft(urlValue)
+    lastSent.current = urlValue
+  }, [urlValue])
   const onChange = (v) => {
     setDraft(v)
+    lastSent.current = v
     onCommit(v)
   }
   return [draft, onChange]
