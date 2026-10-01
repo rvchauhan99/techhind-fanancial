@@ -285,6 +285,67 @@ def main():
     st, done, _ = req("POST", f"/api/work/tasks/{gid}/complete", cookie=dev)
     check("TSK-13b", st == 200 and done.get("status") == "done", f"st={st} status={done.get('status')}")
 
+    # TSK-14 every field change is an activity line
+    st, act_task, _ = req(
+        "POST",
+        "/api/work/tasks",
+        {"title": "Activity field probe", "task_type": "development", "status": "todo", "priority": "normal"},
+        cookie=admin,
+    )
+    aid = (act_task or {}).get("id")
+    st, patched, _ = req(
+        "PATCH",
+        f"/api/work/tasks/{aid}",
+        {"title": "Activity field updated", "task_type": "testing", "status": "in_review"},
+        cookie=admin,
+    )
+    st, acts, _ = req("GET", f"/api/work/activity?entity_type=task&entity_id={aid}&limit=20", cookie=admin)
+    latest = next(
+        (a for a in (acts or []) if a.get("action") in ("task_updated", "status_changed")),
+        {},
+    )
+    summary = latest.get("summary") or ""
+    diff = latest.get("diff") or {}
+    check(
+        "TSK-14",
+        st == 200
+        and patched.get("status") == "in_review"
+        and patched.get("task_type") == "testing"
+        and "Title:" in summary
+        and "Activity field probe" in summary
+        and "Activity field updated" in summary
+        and "Type:" in summary
+        and "Development" in summary
+        and "Testing" in summary
+        and "Status:" in summary
+        and "To Do" in summary
+        and "In Review" in summary
+        and diff.get("title", {}).get("new") == "Activity field updated"
+        and diff.get("task_type", {}).get("new") == "testing"
+        and diff.get("status", {}).get("new") == "in_review",
+        f"st={st} summary={summary!r}",
+    )
+    st, cl_add, _ = req(
+        "PUT",
+        f"/api/work/tasks/{aid}/checklist",
+        {"items": [{"text": "Review PDF", "done": False}]},
+        cookie=admin,
+    )
+    item_id = ((cl_add or {}).get("checklist") or [{}])[0].get("id")
+    st, _, _ = req(
+        "PUT",
+        f"/api/work/tasks/{aid}/checklist",
+        {"items": [{"id": item_id, "text": "Review PDF", "done": True}]},
+        cookie=admin,
+    )
+    st, acts2, _ = req("GET", f"/api/work/activity?entity_type=task&entity_id={aid}&limit=20", cookie=admin)
+    checked = next((a for a in (acts2 or []) if "Checked:" in (a.get("summary") or "")), None)
+    check(
+        "TSK-14b",
+        st == 200 and bool(checked) and "Review PDF" in (checked or {}).get("summary", ""),
+        f"st={st} summary={(checked or {}).get('summary')!r}",
+    )
+
     print(f"\nResult: {PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1
 

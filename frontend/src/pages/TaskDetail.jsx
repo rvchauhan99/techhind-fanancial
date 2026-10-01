@@ -31,6 +31,8 @@ export default function TaskDetail() {
   const [reminderLocal, setReminderLocal] = useState("")
   const [uploading, setUploading] = useState(false)
   const [rejectReason, setRejectReason] = useState("")
+  const [activityRefresh, setActivityRefresh] = useState(0)
+  const bumpActivity = () => setActivityRefresh((n) => n + 1)
 
   const load = () => {
     api.get(`/work/tasks/${id}`).then((r) => {
@@ -54,6 +56,7 @@ export default function TaskDetail() {
       if (Object.prototype.hasOwnProperty.call(body, "title")) {
         setTitleBaseline(data.title || "")
       }
+      bumpActivity()
       toast.success("Task updated")
     } catch (e) {
       toast.error(apiError(e))
@@ -70,6 +73,7 @@ export default function TaskDetail() {
     try {
       const { data } = await api.post(`/work/tasks/${id}/start`)
       setTask(data)
+      bumpActivity()
       toast.success("Task started")
     } catch (e) {
       toast.error(apiError(e))
@@ -80,6 +84,7 @@ export default function TaskDetail() {
     try {
       const { data } = await api.post(`/work/tasks/${id}/complete`)
       setTask(data)
+      bumpActivity()
       toast.success("Task completed")
     } catch (e) {
       toast.error(apiError(e))
@@ -96,6 +101,7 @@ export default function TaskDetail() {
       const { data } = await api.post(`/work/tasks/${id}/reject-testing`, { reason })
       setTask(data)
       setRejectReason("")
+      bumpActivity()
       toast.success("Testing rejected")
     } catch (e) {
       toast.error(apiError(e))
@@ -106,6 +112,7 @@ export default function TaskDetail() {
     try {
       const { data } = await api.post(`/work/tasks/${id}/ready-to-live`)
       setTask(data)
+      bumpActivity()
       toast.success("Marked ready to live")
     } catch (e) {
       toast.error(apiError(e))
@@ -116,6 +123,7 @@ export default function TaskDetail() {
     try {
       const { data } = await api.put(`/work/tasks/${id}/observers`, { observer_ids: ids })
       setTask(data)
+      bumpActivity()
       toast.success("Observers updated")
     } catch (e) {
       toast.error(apiError(e))
@@ -133,6 +141,7 @@ export default function TaskDetail() {
     try {
       const { data } = await api.put(`/work/tasks/${id}/checklist`, { items })
       setTask(data)
+      bumpActivity()
     } catch (e) {
       toast.error(apiError(e))
     }
@@ -177,7 +186,10 @@ export default function TaskDetail() {
           break
         }
       }
-      if (ok) toast.success(ok === 1 ? "File attached" : `${ok} files attached`)
+      if (ok) {
+        bumpActivity()
+        toast.success(ok === 1 ? "File attached" : `${ok} files attached`)
+      }
     } finally {
       setUploading(false)
     }
@@ -187,6 +199,7 @@ export default function TaskDetail() {
     try {
       const { data } = await api.delete(`/work/tasks/${id}/attachments/${fid}`)
       setTask(data)
+      bumpActivity()
       toast.success("Attachment removed")
     } catch (e) {
       toast.error(apiError(e))
@@ -198,6 +211,7 @@ export default function TaskDetail() {
       const reminder_at = reminderLocal ? new Date(reminderLocal).toISOString() : null
       const { data } = await api.post(`/work/tasks/${id}/reminders`, { reminder_at })
       setTask(data)
+      bumpActivity()
       toast.success(reminder_at ? "Reminder set" : "Reminder cleared")
     } catch (e) {
       toast.error(apiError(e))
@@ -488,7 +502,7 @@ export default function TaskDetail() {
         </div>
 
         <div className="xl:col-span-2">
-          <WorkActivity entityType="task" entityId={id} />
+          <WorkActivity entityType="task" entityId={id} refreshKey={activityRefresh} />
         </div>
       </div>
     </Layout>

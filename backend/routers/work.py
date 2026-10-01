@@ -421,6 +421,191 @@ async def _user_map(ids: list) -> dict:
     return {r["id"]: r for r in rows}
 
 
+STATUS_LABELS = {
+    "backlog": "Backlog",
+    "todo": "To Do",
+    "in_progress": "In Progress",
+    "in_review": "In Review",
+    "testing_rejected": "Testing Rejected",
+    "ready_to_live": "Ready to Live",
+    "blocked": "Blocked",
+    "done": "Done",
+    "cancelled": "Cancelled",
+}
+TASK_DIFF_LABELS = {
+    "title": "Title",
+    "description": "Description",
+    "status": "Status",
+    "priority": "Priority",
+    "task_type": "Type",
+    "category": "Type",
+    "project_id": "Project",
+    "assignee_id": "Assignee",
+    "ba_id": "BA",
+    "observer_ids": "Observers",
+    "due_date": "Due date",
+    "start_date": "Start date",
+    "tags": "Tags",
+    "reminder_at": "Reminder",
+    "rejection_reason": "Rejection reason",
+    "checklist": "Checklist",
+}
+TASK_DIFF_ORDER = [
+    "title", "description", "status", "priority", "task_type", "category",
+    "assignee_id", "ba_id", "observer_ids", "project_id",
+    "due_date", "start_date", "tags", "reminder_at", "rejection_reason", "checklist",
+]
+
+
+def _status_label(value) -> str:
+    if not value:
+        return "—"
+    return STATUS_LABELS.get(value, str(value).replace("_", " ").title())
+
+
+def _clip_text(value, limit: int = 80) -> str:
+    text = str(value or "").replace("\n", " ").strip()
+    if not text:
+        return "—"
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1] + "…"
+
+
+def _person_label(uid, names: dict, empty: str = "Unassigned") -> str:
+    if not uid:
+        return empty
+    return names.get(uid) or "Unknown"
+
+
+def _fmt_task_value(key: str, value, names: dict, projects: dict) -> str:
+    if key == "status":
+        return _status_label(value)
+    if key in ("task_type", "category"):
+        if not value:
+            return "—"
+        return str(value).replace("_", " ").title()
+    if key == "priority":
+        return str(value) if value else "—"
+    if key in ("assignee_id", "ba_id"):
+        return _person_label(value, names)
+    if key == "observer_ids":
+        ids = list(value or [])
+        if not ids:
+            return "—"
+        return ", ".join(_person_label(i, names, empty="Unknown") for i in ids)
+    if key == "project_id":
+        if not value:
+            return "—"
+        return projects.get(value) or "—"
+    if key == "tags":
+        tags = [str(t) for t in (value or []) if t]
+        return ", ".join(tags) if tags else "—"
+    if key in ("description", "rejection_reason", "title"):
+        return _clip_text(value)
+    if value in (None, "", []):
+        return "—"
+    return _clip_text(value)
+
+
+async def _label_map_for_diff(diff: dict) -> tuple[dict, dict]:
+    ids = []
+    for key in ("assignee_id", "ba_id"):
+        change = diff.get(key) or {}
+        ids.append(change.get("old"))
+        ids.append(change.get("new"))
+    obs = diff.get("observer_ids") or {}
+    ids.extend(obs.get("old") or [])
+    ids.extend(obs.get("new") or [])
+    umap = await _user_map(ids)
+    names = {k: (v.get("name") or "") for k, v in umap.items()}
+    projects = {}
+    change = diff.get("project_id") or {}
+    for pid in (change.get("old"), change.get("new")):
+        if not pid or pid in projects:
+            continue
+        row = await db.projects.find_one({"id": pid}, {"_id": 0, "number": 1, "name": 1})
+        if not row:
+            projects[pid] = "—"
+            continue
+        projects[pid] = " ".join(p for p in (row.get("number"), row.get("name")) if p) or "—"
+    return names, projects
+
+
+def _checklist_bits(change: dict) -> list[str]:
+    bits = []
+    if change.get("added"):
+        bits.append("Added: " + ", ".join(change["added"]))
+    if change.get("removed"):
+        bits.append("Removed: " + ", ".join(change["removed"]))
+    if change.get("checked"):
+        bits.append("Checked: " + ", ".join(change["checked"]))
+    if change.get("unchecked"):
+        bits.append("Unchecked: " + ", ".join(change["unchecked"]))
+    if change.get("renamed"):
+        bits.append("Renamed: " + "; ".join(change["renamed"]))
+    return bits
+
+
+async def _describe_task_diff(diff: dict) -> str:
+    """One readable line per changed task field."""
+    if not diff:
+        return ""
+    names, projects = await _label_map_for_diff(diff)
+    skip_category = "task_type" in diff
+    ordered = [k for k in TASK_DIFF_ORDER if k in diff]
+    ordered += [k for k in diff if k not in ordered]
+    lines = []
+    for key in ordered:
+        if key == "category" and skip_category:
+            continue
+        if key in ("checklist_count", "attachment_id"):
+            continue
+        change = diff.get(key) or {}
+        if key == "checklist":
+            bits = _checklist_bits(change)
+            if bits:
+                lines.append("Checklist: " + " · ".join(bits))
+                continue
+        label = TASK_DIFF_LABELS.get(key, str(key).replace("_", " ").title())
+        old = _fmt_task_value(key, change.get("old"), names, projects)
+        new = _fmt_task_value(key, change.get("new"), names, projects)
+        lines.append(f"{label}: {old} → {new}")
+    return "\n".join(lines)
+
+
+def _checklist_activity(old_items: list, new_items: list) -> tuple[str, dict]:
+    old_by = {it.get("id"): it for it in (old_items or []) if it.get("id")}
+    new_by = {it.get("id"): it for it in (new_items or []) if it.get("id")}
+    added, removed, checked, unchecked, renamed = [], [], [], [], []
+    for iid, item in new_by.items():
+        text = (item.get("text") or "").strip()
+        prev = old_by.get(iid)
+        if not prev:
+            added.append(text)
+            continue
+        prev_text = (prev.get("text") or "").strip()
+        if prev_text != text:
+            renamed.append(f"{prev_text} → {text}")
+        if bool(prev.get("done")) != bool(item.get("done")):
+            (checked if item.get("done") else unchecked).append(text)
+    for iid, item in old_by.items():
+        if iid not in new_by:
+            removed.append((item.get("text") or "").strip())
+    change = {
+        "old": [(it.get("text") or "").strip() for it in (old_items or [])],
+        "new": [(it.get("text") or "").strip() for it in (new_items or [])],
+        "added": added,
+        "removed": removed,
+        "checked": checked,
+        "unchecked": unchecked,
+        "renamed": renamed,
+    }
+    bits = _checklist_bits(change)
+    summary = "Checklist: " + " · ".join(bits) if bits else f"Checklist ({len(new_items or [])} items)"
+    return summary, {"checklist": change}
+
+
 def _migrate_task_doc(t: dict) -> dict:
     """Normalize legacy fields on read."""
     if not t.get("task_type"):
@@ -1175,11 +1360,10 @@ async def patch_task(
     elif "assignee_id" in diff:
         action = "assignee_changed"
     notice = _task_notice(diff, number)
-    summary = notice[1] if notice else f"Updated {number}"
+    summary = await _describe_task_diff(diff) or f"Updated {number}"
     comment = None
     if patch.get("status") == "testing_rejected":
         comment = patch.get("rejection_reason") or ""
-        summary = f"Testing rejected on {number}"
         action = "testing_rejected"
     await _work_activity(
         user, "task", task_id, action,
@@ -1211,7 +1395,8 @@ async def start_task(task_id: str, user=Depends(require_capability("can_work_wri
     }
     await db.tasks.update_one({"id": task_id}, {"$set": patch})
     await _work_activity(
-        user, "task", task_id, "task_started", f"Started {existing.get('number')}",
+        user, "task", task_id, "task_started",
+        f"Started · Status: {_status_label(existing.get('status'))} → In Progress",
         diff={"status": {"old": existing.get("status"), "new": "in_progress"}},
     )
     await _inbox(
@@ -1243,7 +1428,8 @@ async def complete_task(task_id: str, user=Depends(require_capability("can_work_
         patch["started_at"] = now
     await db.tasks.update_one({"id": task_id}, {"$set": patch})
     await _work_activity(
-        user, "task", task_id, "task_completed", f"Completed {existing.get('number')}",
+        user, "task", task_id, "task_completed",
+        f"Completed · Status: {_status_label(existing.get('status'))} → Done",
         diff={"status": {"old": existing.get("status"), "new": "done"}},
     )
     await _inbox(
@@ -1278,8 +1464,11 @@ async def reject_testing(
     number = existing.get("number") or ""
     await _work_activity(
         user, "task", task_id, "testing_rejected",
-        f"Testing rejected on {number}",
-        diff={"status": {"old": existing.get("status"), "new": "testing_rejected"}},
+        f"Testing rejected · Status: {_status_label(existing.get('status'))} → Testing Rejected",
+        diff={
+            "status": {"old": existing.get("status"), "new": "testing_rejected"},
+            "rejection_reason": {"old": existing.get("rejection_reason") or "", "new": reason},
+        },
         comment=reason,
     )
     await _inbox(
@@ -1309,7 +1498,7 @@ async def ready_to_live(task_id: str, user=Depends(require_capability("can_work_
     number = existing.get("number") or ""
     await _work_activity(
         user, "task", task_id, "ready_to_live",
-        f"Ready to live on {number}",
+        f"Ready to live · Status: {_status_label(existing.get('status'))} → Ready to Live",
         diff={"status": {"old": existing.get("status"), "new": "ready_to_live"}},
     )
     await _inbox(
@@ -1337,10 +1526,11 @@ async def put_observers(
         {"id": task_id},
         {"$set": {"observer_ids": new, "updated_at": iso_now()}},
     )
+    observer_diff = {"observer_ids": {"old": old, "new": new}}
     await _work_activity(
         user, "task", task_id, "observer_added" if len(new) >= len(old) else "observer_removed",
-        f"Observers updated ({len(new)})",
-        diff={"observer_ids": {"old": old, "new": new}},
+        await _describe_task_diff(observer_diff) or f"Observers updated ({len(new)})",
+        diff=observer_diff,
     )
     if set(new) != set(old):
         added = set(new) - set(old)
@@ -1377,10 +1567,11 @@ async def put_checklist(
         {"id": task_id},
         {"$set": {"checklist": items, "updated_at": iso_now()}},
     )
+    checklist_summary, checklist_diff = _checklist_activity(existing.get("checklist") or [], items)
     await _work_activity(
         user, "task", task_id, "checklist_updated",
-        f"Checklist ({len(items)} items)",
-        diff={"checklist_count": {"old": len(existing.get("checklist") or []), "new": len(items)}},
+        checklist_summary,
+        diff=checklist_diff,
     )
     return await _enrich_task(await db.tasks.find_one({"id": task_id}, {"_id": 0}))
 
@@ -1480,10 +1671,11 @@ async def set_reminder(
         "updated_at": iso_now(),
     }
     await db.tasks.update_one({"id": task_id}, {"$set": patch})
+    reminder_diff = {"reminder_at": {"old": old, "new": body.reminder_at}}
     await _work_activity(
         user, "task", task_id, "reminder_set" if body.reminder_at else "reminder_cleared",
-        f"Reminder {body.reminder_at or 'cleared'}",
-        diff={"reminder_at": {"old": old, "new": body.reminder_at}},
+        await _describe_task_diff(reminder_diff) or f"Reminder {body.reminder_at or 'cleared'}",
+        diff=reminder_diff,
     )
     await _inbox(
         user, _task_audience(existing),

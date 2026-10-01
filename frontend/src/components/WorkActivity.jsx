@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import api, { apiError } from "../lib/api"
-import { fmtDateTime } from "../lib/format"
+import { fmtDateTime, taskStatusLabel } from "../lib/format"
 import { useAuth } from "../context/AuthContext"
 import { Empty } from "./Layout"
 import { Button } from "./ui/button"
@@ -15,6 +15,98 @@ const SYSTEM_ACTIONS = new Set([
   "reminder_set", "reminder_cleared", "project_created", "project_updated",
   "testing_rejected", "ready_to_live", "ba_changed",
 ])
+
+const DIFF_LABELS = {
+  title: "Title",
+  description: "Description",
+  status: "Status",
+  priority: "Priority",
+  task_type: "Type",
+  category: "Type",
+  project_id: "Project",
+  assignee_id: "Assignee",
+  ba_id: "BA",
+  observer_ids: "Observers",
+  due_date: "Due date",
+  start_date: "Start date",
+  tags: "Tags",
+  reminder_at: "Reminder",
+  rejection_reason: "Rejection reason",
+  checklist: "Checklist",
+}
+
+const clipText = (value) => {
+  const text = String(value || "").replace(/\s+/g, " ").trim()
+  if (!text) return "—"
+  return text.length > 80 ? `${text.slice(0, 79)}…` : text
+}
+
+const personName = (id, users, empty = "Unassigned") => {
+  if (!id) return empty
+  const match = (users || []).find((user) => user.id === id)
+  return match?.name || "Unknown"
+}
+
+const titleCaseType = (value) => String(value).replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase())
+
+const formatDiffValue = (key, value, users) => {
+  if (key === "status") return value ? taskStatusLabel(value) : "—"
+  if (key === "task_type" || key === "category") return value ? titleCaseType(value) : "—"
+  if (key === "priority") return value ? String(value) : "—"
+  if (key === "assignee_id" || key === "ba_id") return personName(value, users)
+  if (key === "observer_ids") {
+    const ids = Array.isArray(value) ? value : []
+    if (!ids.length) return "—"
+    return ids.map((id) => personName(id, users, "Unknown")).join(", ")
+  }
+  if (key === "tags") {
+    const tags = Array.isArray(value) ? value.filter(Boolean) : []
+    return tags.length ? tags.join(", ") : "—"
+  }
+  if (key === "description" || key === "rejection_reason" || key === "title") return clipText(value)
+  if (value == null || value === "") return "—"
+  if (Array.isArray(value)) {
+    const parts = value.map((item) => (typeof item === "string" ? item : "")).filter(Boolean)
+    return parts.length ? parts.join(", ") : "—"
+  }
+  if (typeof value === "object") return "—"
+  return clipText(value)
+}
+
+const checklistLine = (change) => {
+  const bits = []
+  if (change.added?.length) bits.push(`Added: ${change.added.join(", ")}`)
+  if (change.removed?.length) bits.push(`Removed: ${change.removed.join(", ")}`)
+  if (change.checked?.length) bits.push(`Checked: ${change.checked.join(", ")}`)
+  if (change.unchecked?.length) bits.push(`Unchecked: ${change.unchecked.join(", ")}`)
+  if (change.renamed?.length) bits.push(`Renamed: ${change.renamed.join("; ")}`)
+  return bits.length ? `Checklist: ${bits.join(" · ")}` : ""
+}
+
+const diffLines = (diff, users) => {
+  if (!diff || typeof diff !== "object") return []
+  return Object.keys(diff).flatMap((key) => {
+    if (key === "attachment_id" || key === "checklist_count") return []
+    if (key === "category" && diff.task_type) return []
+    const change = diff[key] || {}
+    if (key === "checklist") {
+      const special = checklistLine(change)
+      if (special) return [special]
+    }
+    const label = DIFF_LABELS[key] || key
+    return [`${label}: ${formatDiffValue(key, change.old, users)} → ${formatDiffValue(key, change.new, users)}`]
+  })
+}
+
+const activityDisplayLines = (row, users) => {
+  const summaryLines = String(row.summary || "").split("\n").map((line) => line.trim()).filter(Boolean)
+  const summaryIsFields = summaryLines.some((line) => line.includes(":") && line.includes("→"))
+  if (summaryIsFields) return summaryLines
+  const fromDiff = diffLines(row.diff, users)
+  if (fromDiff.length) return fromDiff
+  if (summaryLines.length) return summaryLines
+  return [row.action || "Updated"]
+}
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
@@ -51,7 +143,7 @@ const mentionTrigger = (value, caret) => {
 /**
  * Chat-style activity feed for project/task with polling.
  */
-export default function WorkActivity({ entityType, entityId, canComment, pollMs = 20000 }) {
+export default function WorkActivity({ entityType, entityId, canComment, pollMs = 20000, refreshKey = 0 }) {
   const { canCap } = useAuth()
   const [rows, setRows] = useState(null)
   const [body, setBody] = useState("")
@@ -97,7 +189,7 @@ export default function WorkActivity({ entityType, entityId, canComment, pollMs 
     const t = setInterval(load, pollMs)
     return () => clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entityType, entityId, pollMs])
+  }, [entityType, entityId, pollMs, refreshKey])
 
   const mentionMatches = users.filter((user) => {
     const name = (user.name || "").toLowerCase()
@@ -300,13 +392,20 @@ export default function WorkActivity({ entityType, entityId, canComment, pollMs 
         {(rows || []).map((r) => {
           const isComment = r.action === "comment"
           const isSystem = SYSTEM_ACTIONS.has(r.action) && !isComment
-          if (isSystem && !r.comment) {
+          if (isSystem) {
+            const lines = activityDisplayLines(r, users)
+            const note = r.comment && !lines.some((line) => line.includes(r.comment)) ? r.comment : ""
             return (
               <div key={r.id} className="text-center text-[11px] text-slate-500 py-1" data-testid={`activity-sys-${r.id}`}>
-                <span className="font-medium text-slate-600">{r.user_name}</span>
-                {" · "}
-                {r.summary || r.action}
-                <span className="ml-1 font-mono text-[10px] text-slate-400">{fmtDateTime(r.ts)}</span>
+                <div>
+                  <span className="font-medium text-slate-600">{r.user_name}</span>
+                  {" · "}
+                  <span className="font-mono text-[10px] text-slate-400">{fmtDateTime(r.ts)}</span>
+                </div>
+                {lines.map((line, index) => (
+                  <div key={`${r.id}-${index}`} data-testid="activity-change-line">{line}</div>
+                ))}
+                {note ? <div className="mt-0.5 whitespace-pre-wrap">{note}</div> : null}
               </div>
             )
           }
