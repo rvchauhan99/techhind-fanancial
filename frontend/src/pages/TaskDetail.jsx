@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
-import { ArrowLeft, Paperclip, Trash2 } from "lucide-react"
+import { ArrowLeft, Download, Loader2, Paperclip, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import api, { apiError, API } from "../lib/api"
 import { fmtDate, fmtDateTime, TASK_STATUSES, taskStatusLabel } from "../lib/format"
@@ -8,6 +8,7 @@ import { MAX_TASK_ATTACHMENTS } from "../lib/uploadLimits"
 import Layout, { StatusBadge } from "../components/Layout"
 import WorkActivity from "../components/WorkActivity"
 import FileDropzone from "../components/FileDropzone"
+import { downloadStoredFile } from "../components/tickets/TicketAttachmentViewer"
 import { useAuth } from "../context/AuthContext"
 import { Label } from "../components/ui/label"
 import { Input } from "../components/ui/input"
@@ -30,6 +31,7 @@ export default function TaskDetail() {
   const [titleBaseline, setTitleBaseline] = useState("")
   const [reminderLocal, setReminderLocal] = useState("")
   const [uploading, setUploading] = useState(false)
+  const [downloadingId, setDownloadingId] = useState(null)
   const [rejectReason, setRejectReason] = useState("")
   const [activityRefresh, setActivityRefresh] = useState(0)
   const bumpActivity = () => setActivityRefresh((n) => n + 1)
@@ -192,6 +194,17 @@ export default function TaskDetail() {
       }
     } finally {
       setUploading(false)
+    }
+  }
+
+  const handleDownloadFile = async (file) => {
+    setDownloadingId(file.id)
+    try {
+      await downloadStoredFile(file.storage_path, file.original_filename || "file")
+    } catch (err) {
+      toast.error(apiError(err) || "Download failed")
+    } finally {
+      setDownloadingId(null)
     }
   }
 
@@ -476,6 +489,19 @@ export default function TaskDetail() {
                   >
                     {f.original_filename || f.id}
                   </a>
+                  <button
+                    type="button"
+                    data-testid={`task-file-download-${f.id}`}
+                    aria-label={`Download ${f.original_filename || "file"}`}
+                    title="Download"
+                    disabled={downloadingId === f.id}
+                    onClick={() => handleDownloadFile(f)}
+                    className="text-slate-500 hover:text-[#0066CC] disabled:opacity-50"
+                  >
+                    {downloadingId === f.id
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Download className="w-3.5 h-3.5" />}
+                  </button>
                   {write && (
                     <button type="button" onClick={() => removeFile(f.id)} className="text-slate-400 hover:text-red-600" aria-label={`Remove ${f.original_filename || "file"}`}>
                       <Trash2 className="w-3.5 h-3.5" />

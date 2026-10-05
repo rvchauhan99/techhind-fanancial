@@ -1,11 +1,12 @@
 """Projects, tasks, work activity, workload dashboard & report."""
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from pydantic import BaseModel, Field, ValidationError
 
 import storage
 from core import (
@@ -77,6 +78,8 @@ TASK_FIELDS = [
 ]
 LEGACY_TYPE_MAP = {"demo": "customer_demo"}
 MAX_TASK_ATTACHMENTS = 10
+MAX_COMMENT_ATTACHMENTS = 5
+COMMENT_ATTACHMENT_BODY = "(attachment)"
 
 
 def _strip(doc: dict | None) -> dict | None:
@@ -111,6 +114,7 @@ async def _work_activity(
     diff: dict | None = None,
     comment: str | None = None,
     mention_ids: list | None = None,
+    attachment_ids: list | None = None,
 ):
     row = {
         "id": new_id(),
@@ -126,6 +130,8 @@ async def _work_activity(
         "user_name": user.get("name"),
         "role": user.get("role"),
     }
+    if attachment_ids:
+        row["attachment_ids"] = attachment_ids
     await db.work_activity.insert_one(row)
     await audit(user, action, entity_type, entity_id, summary, diff=diff)
     return _strip(row)
@@ -645,9 +651,156 @@ async def _file_map(ids: list) -> list:
     rows = await db.files.find(
         {"id": {"$in": ids}, "is_deleted": {"$ne": True}},
         {"_id": 0},
-    ).to_list(100)
+    ).to_list(len(ids))
     by_id = {r["id"]: r for r in rows}
     return [by_id[i] for i in ids if i in by_id]
+
+
+def _comment_file_view(row: dict) -> dict:
+    return {
+        "file_id": row.get("id"),
+        "name": row.get("original_filename") or row.get("id"),
+        "mime": row.get("content_type") or "",
+        "size": row.get("size") or 0,
+        "storage_path": row.get("storage_path") or "",
+    }
+
+
+async def _with_comment_files(rows: list) -> list:
+    ids: list[str] = []
+    for row in rows:
+        if row.get("action") == "comment":
+            ids.extend(row.get("attachment_ids") or [])
+    mapped = {row["id"]: row for row in await _file_map(ids)}
+    for row in rows:
+        if row.get("action") != "comment":
+            continue
+        row["attachments"] = [
+            _comment_file_view(mapped[fid])
+            for fid in (row.get("attachment_ids") or [])
+            if fid in mapped
+        ]
+    return rows
+
+
+def _normalize_comment_text(text: str | None) -> str:
+    return (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def _real_uploads(files) -> list:
+    out = []
+    for item in files or []:
+        if not item or isinstance(item, (str, bytes)):
+            continue
+        if not getattr(item, "filename", None):
+            continue
+        out.append(item)
+    return out
+
+
+async def _store_comment_files(uploads: list, entity_type: str, entity_id: str) -> list[str]:
+    if len(uploads) > MAX_COMMENT_ATTACHMENTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Max {MAX_COMMENT_ATTACHMENTS} attachments per comment",
+        )
+    folder = "tasks" if entity_type == "task" else "projects"
+    ids: list[str] = []
+    for upload in uploads:
+        data = await upload.read()
+        if not data:
+            continue
+        ctype = validate_upload(data, upload.content_type, upload.filename or "")
+        fid = new_id()
+        name = upload.filename or "bin"
+        ext = name.rsplit(".", 1)[-1].lower() if "." in name else "bin"
+        path = f"{storage.APP_NAME}/{folder}/{entity_id}/comments/{fid}.{ext}"
+        storage.put_object(path, data, ctype)
+        await db.files.insert_one({
+            "id": fid,
+            "storage_path": path,
+            "original_filename": upload.filename,
+            "content_type": ctype,
+            "size": len(data),
+            "is_deleted": False,
+            "created_at": iso_now(),
+        })
+        ids.append(fid)
+    return ids
+
+
+async def _read_comment_request(request: Request) -> tuple[str, list | None, list]:
+    ctype = (request.headers.get("content-type") or "").lower()
+    if "multipart/form-data" in ctype or "application/x-www-form-urlencoded" in ctype:
+        form = await request.form()
+        text = str(form.get("body") or "")
+        raw_mentions = form.get("mention_ids")
+        mention_ids = None
+        if isinstance(raw_mentions, str) and raw_mentions.strip():
+            try:
+                parsed = json.loads(raw_mentions)
+            except json.JSONDecodeError as exc:
+                raise HTTPException(status_code=400, detail="mention_ids must be a JSON list") from exc
+            if not isinstance(parsed, list):
+                raise HTTPException(status_code=400, detail="mention_ids must be a JSON list")
+            mention_ids = parsed
+        return text, mention_ids, list(form.getlist("files"))
+    try:
+        data = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid comment") from exc
+    try:
+        payload = CommentIn(**data)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+    return payload.body, payload.mention_ids, []
+
+
+async def _create_comment(
+    user: dict,
+    *,
+    entity_type: str,
+    entity_id: str,
+    number: str,
+    audience: list,
+    text: str,
+    mention_ids: list | None,
+    files: list,
+):
+    text = _normalize_comment_text(text)
+    uploads = _real_uploads(files)
+    if len(uploads) > MAX_COMMENT_ATTACHMENTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Max {MAX_COMMENT_ATTACHMENTS} attachments per comment",
+        )
+    if not text and uploads:
+        text = COMMENT_ATTACHMENT_BODY
+    if not text:
+        raise HTTPException(status_code=400, detail="Comment body required")
+    if len(text) > 4000:
+        raise HTTPException(status_code=400, detail="Comment too long")
+    attachment_ids = await _store_comment_files(uploads, entity_type, entity_id)
+    if text == COMMENT_ATTACHMENT_BODY and not attachment_ids:
+        raise HTTPException(status_code=400, detail="Comment body required")
+    mention_source = "" if text == COMMENT_ATTACHMENT_BODY else text
+    mentions = await _collect_mentions(mention_source, mention_ids)
+    row = await _work_activity(
+        user, entity_type, entity_id, "comment", "Comment added",
+        comment=text, mention_ids=mentions, attachment_ids=attachment_ids,
+    )
+    await _fanout_comment(
+        user,
+        audience=audience,
+        number=number,
+        text=text,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        activity_id=row["id"],
+        mention_ids=mentions,
+    )
+    enriched = await _with_comment_files([row])
+    return enriched[0]
 
 
 async def _enrich_task(t: dict) -> dict:
@@ -1692,35 +1845,29 @@ async def set_reminder(
 @router.post("/projects/{project_id}/comments")
 async def project_comment(
     project_id: str,
-    body: CommentIn,
+    request: Request,
     user=Depends(require_capability("can_work_write")),
 ):
     project = await db.projects.find_one({"id": project_id}, {"_id": 0})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    text = body.body.strip()
-    mentions = await _collect_mentions(text, body.mention_ids)
-    row = await _work_activity(
-        user, "project", project_id, "comment", "Comment added",
-        comment=text, mention_ids=mentions,
-    )
-    await _fanout_comment(
+    text, mention_ids, files = await _read_comment_request(request)
+    return await _create_comment(
         user,
-        audience=_project_audience(project),
-        number=project.get("number") or "",
-        text=text,
         entity_type="project",
         entity_id=project_id,
-        activity_id=row["id"],
-        mention_ids=mentions,
+        number=project.get("number") or "",
+        audience=_project_audience(project),
+        text=text,
+        mention_ids=mention_ids,
+        files=files,
     )
-    return row
 
 
 @router.post("/tasks/{task_id}/comments")
 async def task_comment(
     task_id: str,
-    body: CommentIn,
+    request: Request,
     user=Depends(require_capability("can_work_write")),
 ):
     task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
@@ -1728,23 +1875,17 @@ async def task_comment(
         raise HTTPException(status_code=404, detail="Task not found")
     if not _freelancer_can_access_task(task, user):
         raise HTTPException(status_code=403, detail="Not allowed to comment on this task")
-    text = body.body.strip()
-    mentions = await _collect_mentions(text, body.mention_ids)
-    row = await _work_activity(
-        user, "task", task_id, "comment", "Comment added",
-        comment=text, mention_ids=mentions,
-    )
-    await _fanout_comment(
+    text, mention_ids, files = await _read_comment_request(request)
+    return await _create_comment(
         user,
-        audience=_task_audience(task),
-        number=task.get("number") or "",
-        text=text,
         entity_type="task",
         entity_id=task_id,
-        activity_id=row["id"],
-        mention_ids=mentions,
+        number=task.get("number") or "",
+        audience=_task_audience(task),
+        text=text,
+        mention_ids=mention_ids,
+        files=files,
     )
-    return row
 
 
 @router.get("/activity")
@@ -1760,7 +1901,7 @@ async def list_activity(
     if entity_id:
         filt["entity_id"] = entity_id
     rows = await db.work_activity.find(filt, {"_id": 0}).sort("ts", -1).to_list(limit)
-    return await _with_mention_state(rows)
+    return await _with_comment_files(await _with_mention_state(rows))
 
 
 # ---------- Dashboard / report ----------

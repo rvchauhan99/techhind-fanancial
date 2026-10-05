@@ -1,11 +1,20 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
+import { Paperclip } from "lucide-react"
 import api, { apiError } from "../lib/api"
 import { fmtDateTime, taskStatusLabel } from "../lib/format"
+import {
+  collectClipboardFiles,
+  filterUploadFiles,
+  MAX_COMMENT_ATTACHMENTS,
+  nameClipboardFile,
+  UPLOAD_ACCEPT,
+} from "../lib/uploadLimits"
 import { useAuth } from "../context/AuthContext"
 import { Empty } from "./Layout"
+import { FileChipList } from "./FileDropzone"
+import TicketAttachmentList from "./tickets/TicketAttachmentViewer"
 import { Button } from "./ui/button"
-import { Input } from "./ui/input"
 import { toast } from "sonner"
 
 const SYSTEM_ACTIONS = new Set([
@@ -155,8 +164,12 @@ export default function WorkActivity({ entityType, entityId, canComment, pollMs 
   const [mentionIds, setMentionIds] = useState([])
   const [highlight, setHighlight] = useState(0)
   const [menuPos, setMenuPos] = useState(null)
+  const [files, setFiles] = useState([])
+  const [sending, setSending] = useState(false)
   const inputRef = useRef(null)
+  const fileRef = useRef(null)
   const listRef = useRef(null)
+  const feedRef = useRef(null)
   const write = canComment ?? canCap("can_work_write")
 
   const load = () => {
@@ -214,6 +227,19 @@ export default function WorkActivity({ entityType, entityId, canComment, pollMs 
       bottom: Math.max(8, window.innerHeight - rect.top + 4),
     })
   }
+
+  useLayoutEffect(() => {
+    const el = feedRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+  }, [rows])
+
+  useLayoutEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = "auto"
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`
+  }, [body])
 
   useLayoutEffect(() => {
     if (!mentionOpen) {
@@ -289,8 +315,53 @@ export default function WorkActivity({ entityType, entityId, canComment, pollMs 
     })
   }
 
+  const queueFiles = (incoming) => {
+    const { accepted, rejected } = filterUploadFiles(incoming, {
+      maxFiles: MAX_COMMENT_ATTACHMENTS,
+      already: files.length,
+    })
+    rejected.forEach((row) => toast.error(row.reason))
+    if (accepted.length) setFiles((prev) => [...prev, ...accepted])
+  }
+
+  const handlePaste = (e) => {
+    const pasted = collectClipboardFiles(e.clipboardData).map(nameClipboardFile)
+    if (!pasted.length) return
+    e.preventDefault()
+    const text = e.clipboardData?.getData("text/plain") || ""
+    if (text) {
+      const el = e.currentTarget
+      const start = el.selectionStart ?? body.length
+      const end = el.selectionEnd ?? body.length
+      const next = `${body.slice(0, start)}${text}${body.slice(end)}`
+      const pos = start + text.length
+      setBody(next)
+      requestAnimationFrame(() => {
+        el.focus()
+        el.setSelectionRange(pos, pos)
+        syncMention(next, pos)
+      })
+    }
+    queueFiles(pasted)
+  }
+
+  const handlePickFiles = (e) => {
+    queueFiles(Array.from(e.target.files || []))
+    e.target.value = ""
+  }
+
+  const handleRemoveFile = (index) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index))
+  }
+
   const handleKeyDown = (e) => {
-    if (!mentionOpen) return
+    if (!mentionOpen) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault()
+        e.currentTarget.form?.requestSubmit()
+      }
+      return
+    }
     if (e.key === "Escape") {
       e.preventDefault()
       setMentionOpen(false)
@@ -325,20 +396,32 @@ export default function WorkActivity({ entityType, entityId, canComment, pollMs 
 
   const handleComment = async (e) => {
     e.preventDefault()
-    if (!body.trim()) return
+    const text = body.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim()
+    if ((!text && !files.length) || sending) return
+    const path = entityType === "project"
+      ? `/work/projects/${entityId}/comments`
+      : `/work/tasks/${entityId}/comments`
+    setSending(true)
     try {
-      const path = entityType === "project"
-        ? `/work/projects/${entityId}/comments`
-        : `/work/tasks/${entityId}/comments`
-      const text = body.trim()
-      await api.post(path, { body: text, mention_ids: idsStillInBody(text) })
+      if (files.length) {
+        const fd = new FormData()
+        fd.append("body", text)
+        fd.append("mention_ids", JSON.stringify(idsStillInBody(text)))
+        files.forEach((file) => fd.append("files", file))
+        await api.post(path, fd)
+      } else {
+        await api.post(path, { body: text, mention_ids: idsStillInBody(text) })
+      }
       setBody("")
+      setFiles([])
       setMentionIds([])
       setMentionOpen(false)
       toast.success("Comment posted")
       load()
     } catch (err) {
       toast.error(apiError(err))
+    } finally {
+      setSending(false)
     }
   }
 
@@ -388,7 +471,7 @@ export default function WorkActivity({ entityType, entityId, canComment, pollMs 
       <div className="px-3 py-2 border-b border-slate-100 text-[11px] uppercase tracking-wider text-slate-500 font-semibold shrink-0">
         Activity / Chat
       </div>
-      <div className="flex-1 overflow-y-auto p-3 space-y-2 max-h-[55vh]" data-testid="activity-feed">
+      <div ref={feedRef} className="flex-1 overflow-y-auto p-3 space-y-2 max-h-[55vh]" data-testid="activity-feed">
         {(rows || []).map((r) => {
           const isComment = r.action === "comment"
           const isSystem = SYSTEM_ACTIONS.has(r.action) && !isComment
@@ -411,6 +494,8 @@ export default function WorkActivity({ entityType, entityId, canComment, pollMs 
           }
           const mentioned = (r.mentions || []).map((m) => m.name).filter(Boolean)
           const seen = (r.seen_by || []).map((m) => m.name).filter(Boolean)
+          const commentText = r.comment || r.summary
+          const showText = commentText && commentText !== "(attachment)"
           return (
             <div key={r.id} className="flex flex-col gap-0.5" data-testid={`activity-msg-${r.id}`}>
               <div className="flex items-baseline gap-2">
@@ -418,7 +503,10 @@ export default function WorkActivity({ entityType, entityId, canComment, pollMs 
                 <span className="font-mono text-[10px] text-slate-400">{fmtDateTime(r.ts)}</span>
               </div>
               <div className="text-sm text-slate-700 bg-slate-50 border border-slate-100 rounded-md px-2.5 py-1.5 whitespace-pre-wrap">
-                <CommentBody text={r.comment || r.summary} mentions={r.mentions} />
+                {showText ? <CommentBody text={commentText} mentions={r.mentions} /> : null}
+                {isComment && (r.attachments || []).length > 0 ? (
+                  <TicketAttachmentList attachments={r.attachments} />
+                ) : null}
               </div>
               {isComment && mentioned.length > 0 && (
                 <div className="text-[10px] text-slate-500 px-0.5" data-testid={`mention-to-${r.id}`}>
@@ -434,33 +522,64 @@ export default function WorkActivity({ entityType, entityId, canComment, pollMs 
         {rows && !rows.length && <Empty label="No activity yet" />}
       </div>
       {write && (
-        <form onSubmit={handleComment} className="px-3 py-2 border-t border-slate-100 flex gap-2 shrink-0">
-          <button
-            type="button"
-            data-testid="work-mention-button"
-            aria-label="Mention a user"
-            onClick={handleAt}
-            className="h-8 w-8 shrink-0 rounded-md border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            @
-          </button>
-          <Input
-            ref={inputRef}
-            data-testid="work-comment-input"
-            className="h-8 text-xs"
-            placeholder="Write a comment… use @Name to mention"
-            value={body}
-            aria-autocomplete="list"
-            aria-expanded={mentionOpen}
-            onKeyDown={handleKeyDown}
-            onChange={(e) => {
-              setBody(e.target.value)
-              syncMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
-            }}
-          />
-          <Button data-testid="work-comment-submit" type="submit" size="sm" className="h-8 bg-[#0F284E] hover:bg-[#17386D] text-white shrink-0">
-            Send
-          </Button>
+        <form onSubmit={handleComment} className="px-3 py-2 border-t border-slate-100 flex flex-col gap-1 shrink-0">
+          <FileChipList files={files} onRemove={handleRemoveFile} disabled={sending} />
+          <div className="flex gap-2 items-end">
+            <button
+              type="button"
+              data-testid="work-mention-button"
+              aria-label="Mention a user"
+              onClick={handleAt}
+              className="h-8 w-8 shrink-0 rounded-md border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+            >
+              @
+            </button>
+            <button
+              type="button"
+              data-testid="work-comment-attach"
+              aria-label="Attach a file"
+              disabled={sending || files.length >= MAX_COMMENT_ATTACHMENTS}
+              onClick={() => fileRef.current?.click()}
+              className="h-8 w-8 shrink-0 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+            >
+              <Paperclip className="w-3.5 h-3.5 mx-auto" />
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              accept={UPLOAD_ACCEPT}
+              className="hidden"
+              data-testid="work-comment-file-input"
+              onChange={handlePickFiles}
+            />
+            <textarea
+              ref={inputRef}
+              data-testid="work-comment-input"
+              rows={1}
+              className="min-h-8 max-h-[7.5rem] w-full resize-none overflow-y-auto rounded-md border border-slate-200 bg-transparent px-2 py-1.5 text-xs leading-4 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-400"
+              placeholder="Write a comment… use @Name to mention"
+              value={body}
+              disabled={sending}
+              aria-autocomplete="list"
+              aria-expanded={mentionOpen}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              onChange={(e) => {
+                setBody(e.target.value)
+                syncMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
+              }}
+            />
+            <Button
+              data-testid="work-comment-submit"
+              type="submit"
+              size="sm"
+              disabled={sending || (!body.trim() && !files.length)}
+              className="h-8 bg-[#0F284E] hover:bg-[#17386D] text-white shrink-0"
+            >
+              Send
+            </Button>
+          </div>
           {mentionMenu}
         </form>
       )}

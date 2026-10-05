@@ -1,6 +1,7 @@
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 export const MAX_TASK_ATTACHMENTS = 10
 export const MAX_TICKET_ATTACHMENTS = 5
+export const MAX_COMMENT_ATTACHMENTS = 5
 
 export const ALLOWED_UPLOAD_MIME = [
   "image/png",
@@ -46,6 +47,36 @@ export const formatBytes = (n) => {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+export const collectClipboardFiles = (clipboard) => {
+  const files = []
+  const seen = new Set()
+  const push = (file) => {
+    if (!file) return
+    const key = `${file.name}|${file.size}|${file.lastModified}|${file.type}`
+    if (seen.has(key)) return
+    seen.add(key)
+    files.push(file)
+  }
+  const items = clipboard?.items
+  if (items && items.length) {
+    for (let i = 0; i < items.length; i += 1) {
+      const item = items[i]
+      if (item.kind !== "file") continue
+      push(item.getAsFile?.())
+    }
+  }
+  Array.from(clipboard?.files || []).forEach(push)
+  return files
+}
+
+export const nameClipboardFile = (file) => {
+  const raw = String(file?.name || "").trim()
+  if (raw && raw !== "blob") return file
+  const subtype = String(file?.type || "image/png").split("/")[1] || "png"
+  const ext = subtype === "jpeg" ? "jpg" : subtype.split("+")[0]
+  return new File([file], `pasted-image.${ext}`, { type: file.type || "image/png" })
 }
 
 export const collectDroppedFiles = (dataTransfer) => {

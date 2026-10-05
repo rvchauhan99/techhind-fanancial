@@ -45,6 +45,11 @@ const downloadBlob = (blob, name) => {
   window.URL.revokeObjectURL(url)
 }
 
+export const downloadStoredFile = async (storagePath, name) => {
+  const blob = await fetchTicketFileBlob({ storage_path: storagePath })
+  downloadBlob(blob, name || "attachment")
+}
+
 export const openBlobInTab = (blob) => {
   const url = window.URL.createObjectURL(blob)
   window.open(url, "_blank", "noopener,noreferrer")

@@ -72,6 +72,37 @@ def check(cid: str, cond: bool, detail: str = ""):
         print(f"FAIL {cid} {detail}")
 
 
+def multipart_comment(text: str, filename: str, content: bytes, content_type: str):
+    boundary = "----TaskCommentBoundary7MA4YWxkTrZu0gW"
+    parts = [
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"body\"\r\n\r\n{text}\r\n".encode(),
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"mention_ids\"\r\n\r\n[]\r\n".encode(),
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="files"; filename="{filename}"\r\n'
+            f"Content-Type: {content_type}\r\n\r\n"
+        ).encode()
+        + content
+        + b"\r\n",
+        f"--{boundary}--\r\n".encode(),
+    ]
+    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+
+def raw_file_head(path: str, cookie: str):
+    headers = {"Cookie": cookie}
+    for part in cookie.split(";"):
+        part = part.strip()
+        if part.startswith("access_token="):
+            headers["Authorization"] = f"Bearer {part.split('=', 1)[1]}"
+    request = urllib.request.Request(BASE + path, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=45) as resp:
+            return resp.status, resp.read(8)
+    except urllib.error.HTTPError as exc:
+        return exc.code, b""
+
+
 def multipart_file(field: str, filename: str, content: bytes, content_type: str = "text/plain"):
     boundary = "----TaskQABoundary7MA4YWxkTrZu0gW"
     body = (
@@ -344,6 +375,50 @@ def main():
         "TSK-14b",
         st == 200 and bool(checked) and "Review PDF" in (checked or {}).get("summary", ""),
         f"st={st} summary={(checked or {}).get('summary')!r}",
+    )
+
+    # TSK-15 chat keeps pasted line breaks; image attach stays on the comment
+    note = "Open product decisions\n\nWhen T-KYC = load_enhancement_required, must become passed."
+    st, posted, _ = req("POST", f"/api/work/tasks/{tid}/comments", {"body": note}, cookie=admin)
+    check("TSK-15a", st == 200 and posted.get("comment") == note, f"st={st} comment={posted.get('comment')!r}")
+    st, acts, _ = req("GET", f"/api/work/activity?entity_type=task&entity_id={tid}&limit=30", cookie=admin)
+    row = next((a for a in (acts or []) if a.get("comment") == note), None)
+    check("TSK-15b", st == 200 and bool(row) and (row or {}).get("attachments") == [], f"st={st}")
+
+    body, ctype = multipart_comment("", "pasted-image.png", png, "image/png")
+    st, img_c, _ = req("POST", f"/api/work/tasks/{tid}/comments", cookie=admin, raw=body, ctype=ctype)
+    img_atts = (img_c or {}).get("attachments") or []
+    img_path = (img_atts[0] or {}).get("storage_path") if img_atts else ""
+    check(
+        "TSK-15c",
+        st == 200
+        and (img_c or {}).get("comment") == "(attachment)"
+        and len(img_atts) == 1
+        and img_atts[0].get("name") == "pasted-image.png"
+        and img_atts[0].get("mime") == "image/png",
+        f"st={st} comment={(img_c or {}).get('comment')!r} n={len(img_atts)}",
+    )
+    st, task_after, _ = req("GET", f"/api/work/tasks/{tid}", cookie=admin)
+    chat_fid = img_atts[0].get("file_id") if img_atts else None
+    check(
+        "TSK-15d",
+        st == 200 and chat_fid and chat_fid not in (task_after.get("attachment_ids") or []),
+        f"st={st} fid={chat_fid}",
+    )
+    file_status, file_head = raw_file_head(f"/api/files/{img_path}", admin) if img_path else (0, b"")
+    check("TSK-15e", file_status == 200 and file_head.startswith(b"\x89PNG"), f"st={file_status}")
+
+    mixed = "Line one\n\nLine two"
+    body, ctype = multipart_comment(mixed, "notes.md", b"# chat\n", "text/plain")
+    st, mixed_c, _ = req("POST", f"/api/work/tasks/{tid}/comments", cookie=admin, raw=body, ctype=ctype)
+    mixed_atts = (mixed_c or {}).get("attachments") or []
+    check(
+        "TSK-15f",
+        st == 200
+        and (mixed_c or {}).get("comment") == mixed
+        and len(mixed_atts) == 1
+        and mixed_atts[0].get("mime") == "text/markdown",
+        f"st={st} comment={(mixed_c or {}).get('comment')!r} mime={(mixed_atts[0] or {}).get('mime') if mixed_atts else None}",
     )
 
     print(f"\nResult: {PASS} passed, {FAIL} failed")
