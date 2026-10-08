@@ -8,6 +8,9 @@ description: >-
 
 # Finance context sync
 
+Does not replace global `context-sync-after-tasks` (PMB + codebase-memory); this only updates Finance annexes.
+
+
 ## Goal
 
 Avoid full-repo re-scans. Patch annexes; bump `AGENTS.md` last-synced.
